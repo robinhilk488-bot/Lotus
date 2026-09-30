@@ -1,0 +1,10 @@
+services:
+  license:
+    build: .
+    container_name: kassa-license
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${PORT:-8900}:8900"
+    volumes:
+      - ./data:/data

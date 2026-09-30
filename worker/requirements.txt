@@ -1,0 +1,5 @@
+flask==3.1.*
+gunicorn==23.*
+requests==2.*
+beautifulsoup4==4.*
+cryptography>=43
