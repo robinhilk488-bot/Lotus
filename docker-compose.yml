@@ -1,0 +1,10 @@
+services:
+  worker:
+    build: ./worker
+    container_name: kassa-worker
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${KASSA_PORT:-8765}:8765"
+    volumes:
+      - ./data:/data
