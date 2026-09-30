@@ -1,0 +1,48 @@
+name: Сборка Lotus.exe
+
+on:
+  push:
+    branches: [main]
+    paths: ["client/**", ".github/workflows/build-exe.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Подставить адрес репозитория
+        shell: pwsh
+        run: |
+          $f = "client/main.py"
+          (Get-Content $f -Raw -Encoding utf8).Replace('robinhilk488-bot/Lotus', '${{ github.repository }}') | Set-Content $f -Encoding utf8 -NoNewline
+
+      - name: Установить зависимости
+        run: pip install -r client/requirements.txt pyinstaller
+
+      - name: Собрать exe
+        working-directory: client
+        run: pyinstaller --noconfirm --noconsole --onefile --name Lotus --icon kassa.ico --add-data "ui;ui" main.py
+
+      - name: Сохранить сборку
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lotus
+          path: client/dist/Lotus.exe
+
+      - name: Выложить в релиз
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Последняя версия
+          body: Скачайте Lotus.exe и запустите. Первое окно покажет, как установить сервер.
+          files: client/dist/Lotus.exe
+          make_latest: true
