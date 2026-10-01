@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Подставить адрес репозитория
         shell: pwsh
@@ -28,13 +28,15 @@ jobs:
       - name: Установить зависимости
         run: pip install -r client/requirements.txt pyinstaller
 
-      - name: Собрать exe
+      - name: Собрать exe (один файл)
         working-directory: client
         run: >
           pyinstaller --noconfirm --noconsole --onefile --name Lotus --icon kassa.ico
           --add-data "ui;ui"
           --collect-all webview
-          --collect-all cefpython3
+          --collect-all clr_loader
+          --collect-all pythonnet
+          --hidden-import clr
           main.py
 
       - name: Выложить в релиз
@@ -42,6 +44,6 @@ jobs:
         with:
           tag_name: latest
           name: Последняя версия
-          body: Скачайте Lotus.exe и запустите — больше ничего устанавливать не нужно.
+          body: Скачайте Lotus.exe и запустите. Один файл, ничего больше ставить не нужно.
           files: client/dist/Lotus.exe
           make_latest: true
