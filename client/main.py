@@ -184,9 +184,10 @@ def _ensure_webview2():
 
 
 if __name__ == "__main__":
+    _ensure_webview2()  # тихо доустановит компонент Windows, если его нет (у большинства он уже есть)
     webview.create_window(
         "Lotus", str(APP_DIR / "ui" / "index.html"), js_api=Api(),
         width=1280, height=800, min_size=(1040, 680), background_color="#0B0710",
     )
-    # gui="cef": встроенный Chromium упакован в .exe — пользователю ничего ставить не нужно.
-    webview.start(gui="cef")
+    # edgechromium (WebView2) — движок из Windows, один лёгкий .exe. Флаги сборки гарантируют корректный ввод.
+    webview.start(gui="edgechromium")
