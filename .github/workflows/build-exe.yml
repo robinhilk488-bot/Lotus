@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.9"
 
       - name: Подставить адрес репозитория
         shell: pwsh
@@ -30,19 +30,18 @@ jobs:
 
       - name: Собрать exe
         working-directory: client
-        run: pyinstaller --noconfirm --noconsole --onefile --name Lotus --icon kassa.ico --add-data "ui;ui" main.py
-
-      - name: Сохранить сборку
-        uses: actions/upload-artifact@v4
-        with:
-          name: Lotus
-          path: client/dist/Lotus.exe
+        run: >
+          pyinstaller --noconfirm --noconsole --onefile --name Lotus --icon kassa.ico
+          --add-data "ui;ui"
+          --collect-all webview
+          --collect-all cefpython3
+          main.py
 
       - name: Выложить в релиз
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Последняя версия
-          body: Скачайте Lotus.exe и запустите. Первое окно покажет, как установить сервер.
+          body: Скачайте Lotus.exe и запустите — больше ничего устанавливать не нужно.
           files: client/dist/Lotus.exe
           make_latest: true
