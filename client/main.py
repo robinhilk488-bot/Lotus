@@ -141,9 +141,52 @@ class Api:
         return data if isinstance(data, dict) else {"data": data}
 
 
+def _webview2_installed() -> bool:
+    """Проверяет, есть ли на Windows компонент Edge WebView2 (нужен для нормального ввода)."""
+    if sys.platform != "win32":
+        return True
+    try:
+        import winreg
+    except Exception:
+        return True
+    paths = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
+    ]
+    for root, path in paths:
+        try:
+            with winreg.OpenKey(root, path) as k:
+                v, _ = winreg.QueryValueEx(k, "pv")
+                if v and v != "0.0.0.0":
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _ensure_webview2():
+    """Если компонента нет — тихо скачивает и ставит его для текущего пользователя (без прав админа, без окон)."""
+    if sys.platform != "win32" or _webview2_installed():
+        return
+    import subprocess
+    import tempfile
+    import urllib.request
+    try:
+        url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"  # официальный evergreen-бутстраппер Microsoft
+        tmp = Path(tempfile.gettempdir()) / "MicrosoftEdgeWebView2Setup.exe"
+        urllib.request.urlretrieve(url, tmp)
+        # /silent — без окон, установка в профиль пользователя не требует администратора
+        subprocess.run([str(tmp), "/silent", "/install"], timeout=300,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except Exception:
+        pass  # не вышло — не блокируем запуск, приложение попробует стартовать как есть
+
+
 if __name__ == "__main__":
     webview.create_window(
         "Lotus", str(APP_DIR / "ui" / "index.html"), js_api=Api(),
-        width=1280, height=800, min_size=(1040, 680), background_color="#101A2E",
+        width=1280, height=800, min_size=(1040, 680), background_color="#0B0710",
     )
-    webview.start()
+    # gui="cef": встроенный Chromium упакован в .exe — пользователю ничего ставить не нужно.
+    webview.start(gui="cef")
