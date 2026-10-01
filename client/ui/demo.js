@@ -45,6 +45,49 @@ const Demo = (() => {
                  {key:"extend_command",label:"Команда продления",type:"text",default:"!продлить"},
                  {key:"remind_before_min",label:"Напоминать за, минут",type:"number",default:15}],
       config: { extend_offer_id: "3910042", extend_command: "!продлить", remind_before_min: 15 }, secrets_set: {}, missing: [], tasks: { done: 64, pending: 0, attention: 0 } },
+    { id: "autosmm", ready: true, name: "AutoSMM", version: "1.0", category: "Выдача через поставщиков", enabled: false, can_test: true, can_dry_run: true,
+      description: "Продажа SMM-услуг через SMM-панели (TwiBoost и совместимые). Код услуги #1-1234 в конце описания лота.",
+      settings: [
+        {key:"url1",label:"Поставщик 1 · адрес API",type:"text",default:"https://twiboost.com/api/v2",hint:"Например: https://twiboost.com/api/v2"},
+        {key:"key1",label:"Поставщик 1 · API-ключ",type:"secret",hint:"В панели: раздел API. Хранится в зашифрованном виде."},
+        {key:"url2",label:"Поставщик 2 · адрес API",type:"text",default:"",hint:"Необязательно. Для кодов #2-1234."},
+        {key:"key2",label:"Поставщик 2 · API-ключ",type:"secret",hint:"Необязательно."},
+        {key:"max_price",label:"Не заказывать дороже, $ за заказ",type:"number",default:10,hint:"0 — без лимита."},
+        {key:"ask_link",label:"Запрос ссылки",type:"textarea",default:"Спасибо за заказ! Пришлите ссылку, куда выполнить накрутку {quantity} шт."},
+        {key:"confirm",label:"Подтверждение ссылки",type:"textarea",default:"Проверьте ссылку: {link}\nВсё верно? + если да, − если изменить."},
+        {key:"done_text",label:"Накрутка завершена",type:"textarea",default:"Накрутка выполнена полностью, спасибо!"}
+      ],
+      config: {url1:"https://twiboost.com/api/v2",url2:"",max_price:10,ask_link:"Спасибо за заказ! Пришлите ссылку, куда выполнить накрутку {quantity} шт.",confirm:"Проверьте ссылку: {link}\nВсё верно? + если да, − если изменить.",done_text:"Накрутка выполнена полностью, спасибо!"},
+      secrets_set:{key1:false,key2:false}, missing:[], tasks:{done:0,pending:0,attention:0} },
+    { id: "autoresponder", ready: true, name: "Автоответчик", version: "1.0", category: "Покупатели", enabled: true, can_test: false, can_dry_run: false,
+      description: "Отвечает на сообщения покупателей по ключевым словам. Правила: «слово = ответ», по строке на правило.",
+      settings: [
+        {key:"rules",label:"Правила",type:"textarea",default:"",hint:"По строке: ключевые слова = ответ. Несколько слов через | . Регистр не важен."},
+        {key:"cooldown_min",label:"Не повторять ответ чаще, минут",type:"number",default:10,hint:"Защита от спама."},
+        {key:"first_only",label:"Отвечать только на первое совпадение",type:"bool",default:true}
+      ],
+      config:{rules:"привет | здравствуй = Здравствуйте! Товар выдаётся автоматически после оплаты.\nгарантия | возврат = Гарантия 24 часа, при проблеме вернём деньги.",cooldown_min:10,first_only:true},
+      secrets_set:{}, missing:[], tasks:{done:0,pending:0,attention:0} },
+    { id: "offline_activite", ready: true, name: "Offline Activite", version: "1.0", category: "Steam", enabled: false, can_test: false, can_dry_run: false,
+      description: "Выдаёт покупателю код Steam Guard по команде !guard для настроенных аккаунтов.",
+      settings:[{key:"command",label:"Команда для кода",type:"text",default:"!guard"},{key:"only_buyers",label:"Отвечать только покупателям этого аккаунта",type:"bool",default:true},{key:"reply",label:"Текст с кодом",type:"text",default:"Код Steam Guard: {code}"}],
+      config:{command:"!guard",only_buyers:true,reply:"Код Steam Guard: {code} (действует ~30 секунд)"}, secrets_set:{}, missing:[], tasks:{done:0,pending:0,attention:0} },
+    { id: "email_code", ready: true, name: "EmailCode", version: "1.0", category: "Steam", enabled: false, can_test: true, can_dry_run: false,
+      description: "Присылает покупателю код подтверждения из почты (IMAP) по команде !code.",
+      settings:[{key:"imap_host",label:"IMAP-сервер",type:"text",default:"imap.gmail.com",hint:"Например: imap.gmail.com, imap.mail.ru"},{key:"email",label:"Почта",type:"text",default:""},{key:"password",label:"Пароль (пароль приложения)",type:"secret",hint:"Создайте пароль приложения в настройках почты."},{key:"command",label:"Команда для кода",type:"text",default:"!code"},{key:"fresh_min",label:"Искать код в письмах за, минут",type:"number",default:10},{key:"only_buyers",label:"Отвечать только покупателям",type:"bool",default:true}],
+      config:{imap_host:"imap.gmail.com",email:"",command:"!code",fresh_min:10,only_buyers:true}, secrets_set:{password:false}, missing:[], tasks:{done:0,pending:0,attention:0} },
+    { id: "ai_assistant", ready: true, name: "ИИ-ответы", version: "1.0", category: "Покупатели", enabled: false, can_test: true, can_dry_run: true,
+      description: "ИИ отвечает на лёгкие вопросы покупателей по лоту. Про оплату и возвраты — передаёт продавцу.",
+      settings:[
+        {key:"base_url",label:"Адрес API",type:"text",default:"https://api.openai.com/v1",hint:"OpenAI-совместимый API."},
+        {key:"api_key",label:"API-ключ",type:"secret",hint:"Ключ провайдера ИИ. Платится по использованию."},
+        {key:"model",label:"Модель",type:"text",default:"gpt-4o-mini",hint:"Берите недорогую модель."},
+        {key:"faq",label:"Памятка для ИИ (FAQ)",type:"textarea",default:"",hint:"Факты о товарах: сроки, совместимость, активация."},
+        {key:"daily_limit",label:"Ответов одному покупателю в день",type:"number",default:5,hint:"0 — без лимита."},
+        {key:"stop_words",label:"Стоп-слова (ИИ молчит)",type:"text",default:"возврат, чарджбэк, жалоба",hint:"Через запятую."}
+      ],
+      config:{base_url:"https://api.openai.com/v1",model:"gpt-4o-mini",faq:"Выдача автоматическая, сразу после оплаты. Гарантия 24 часа. Если товар не пришёл — напишите !help.",daily_limit:5,stop_words:"возврат, чарджбэк, жалоба"},
+      secrets_set:{api_key:false}, missing:[], tasks:{done:0,pending:0,attention:0} },
     { id: "big_orders", ready: true, name: "Крупные заказы", version: "1.0", category: "Уведомления", enabled: true, can_test: false, can_dry_run: true,
       description: "Пишет в журнал, когда приходит заказ дороже заданной суммы.",
       settings: [{ key: "threshold", label: "Сумма от, ₽", type: "number", default: 1000 },
@@ -59,6 +102,7 @@ const Demo = (() => {
       result: null, updated: now - 95, buyer: "xoxo_kate", description: "Telegram Stars, 500 шт, быстрая выдача", amount: 740, currency: "₽" },
   ];
 
+  let offlineAccs = null;
   let sub = { active: true, source: "trial", until: now + 3*86400, days_left: 3, trial_until: now + 3*86400, offline: false, configured: true };
   let settings = {
     sync_interval_min: 5, chat_interval_sec: 10, notify_new_orders: true,
@@ -89,8 +133,12 @@ const Demo = (() => {
       { id: 4, author_id: 777, text: "Продавец получил уведомление и скоро ответит.", ts: now - 2395, mine: 1 },
     ],
   };
+  let onlypcJobs = [
+    { order_id: "RENT9001", buyer: "clubkid", account_id: 1, got_photo: true, created: now - 300 },
+    { order_id: "RENT9002", buyer: "newguy", account_id: 1, got_photo: false, created: now - 1200 },
+  ];
   const rentAccounts = [
-    { login: "csgo_rent_01", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788" },
+    { login: "csgo_rent_01", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788", offer_id: "3910101" },
     { login: "csgo_rent_02", password: "Zt4hNb8Rty", has_mafile: true, enabled: true, state: "free", rented_until: null, rented_by: null, order_id: null },
     { login: "dota_rent_01", password: "Wq1vCx7Uio", has_mafile: false, enabled: true, state: "needs_reset", rented_until: null, rented_by: null, order_id: null },
     { login: "csgo_rent_03", password: "Mn5jDk3Poi", has_mafile: true, enabled: false, state: "free", rented_until: null, rented_by: null, order_id: null },
@@ -157,7 +205,7 @@ const Demo = (() => {
         if (body.enabled && pl.missing.length) return { error: "Сначала заполните в настройках: " + pl.missing.join(", ") };
         pl.enabled = body.enabled; return { ok: true };
       }
-      if (p.endsWith("/test")) return p.includes("lzt") ? { ok: false, message: "Не заполнено: API-токен LZT" } : { ok: true, message: "Ключ работает. Баланс: 184.20 $" };
+      if (p.endsWith("/test")) return p.includes("autosmm") ? { ok: true, message: "Поставщик 1: Баланс: 50.00 USD" } : p.includes("email_code") ? { ok: true, message: "Подключение работает. Свежих писем с кодом нет." } : p.includes("ai_assistant") ? { ok: true, message: "Работает. Модель ответила: тест" } : p.includes("lzt") ? { ok: false, message: "Не заполнено: API-токен LZT" } : { ok: true, message: "Ключ работает. Баланс: 184.20 $" };
       if (p.endsWith("/dry-run")) {
         const big = body.amount >= plugins[0].config.threshold;
         return { ok: true, message: big ? "Отработал без ошибок" : "Пропущен плагином",
@@ -206,6 +254,19 @@ const Demo = (() => {
         if (c) c.unread = 0;
         return { messages: list, warning: null };
       }
+      if (p.startsWith("/api/offline/accounts")) {
+        offlineAccs ||= [{login:"cs2_offline_01",has_mafile:true},{login:"dota_offline_02",has_mafile:true}];
+        const login = decodeURIComponent(p.split("/")[4] || "");
+        if (method === "GET") return { data: offlineAccs };
+        if (method === "POST") { offlineAccs.push({login:body.login,has_mafile:!!body.mafile}); return { ok: true }; }
+        if (method === "DELETE") { offlineAccs = offlineAccs.filter(a=>a.login!==login); return { ok: true }; }
+      }
+      if (p === "/api/rent/onlypc" && method === "GET") return { data: onlypcJobs };
+      if (p.startsWith("/api/rent/onlypc/")) {
+        const id = p.split("/")[4];
+        onlypcJobs = onlypcJobs.filter(j => j.order_id !== id);
+        return { ok: true, message: p.endsWith("approve") ? "Аккаунт выдан" : "Отклонено" };
+      }
       if (p.startsWith("/api/rent/accounts")) {
         const seg = p.split("/"); const login = decodeURIComponent(seg[4] || "");
         if (p === "/api/rent/accounts" && method === "GET") return { data: rentAccounts };
@@ -213,6 +274,7 @@ const Demo = (() => {
         const a = rentAccounts.find(x => x.login === login);
         if (!a) return { error: "Аккаунт не найден" };
         if (seg[5] === "test") return { ok: true, message: "Вход работает, пароль верный" };
+        if (seg[5] === "logout") return { ok: true, message: "Все сессии аккаунта завершены" };
         if (seg[5] === "reset-done") { a.state = "free"; if (body.password) a.password = body.password; a.rented_by = null; a.rented_until = null; return { ok: true }; }
         if (method === "PUT") { if ("enabled" in body) a.enabled = body.enabled; if (body.password) a.password = body.password; if (body.mafile) a.has_mafile = true; return { ok: true }; }
         if (method === "DELETE") { rentAccounts.splice(rentAccounts.indexOf(a), 1); return { ok: true }; }

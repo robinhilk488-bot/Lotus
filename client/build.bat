@@ -1,12 +1,11 @@
 @echo off
 chcp 65001 >nul
-rem Сборка Kassa.exe на своём компьютере (нужен Python 3.12 с python.org).
-rem Перед сборкой замените robinhilk488-bot/Lotus в main.py на свой репозиторий GitHub.
+rem Нужен Python 3.9 (cefpython3 работает только на 3.9).
 cd /d "%~dp0"
 python -m pip install -r requirements.txt pyinstaller || goto :error
-python -m PyInstaller --noconfirm --noconsole --onefile --name Kassa --icon kassa.ico --add-data "ui;ui" main.py || goto :error
+python -m PyInstaller --noconfirm --noconsole --onefile --name Lotus --icon kassa.ico --add-data "ui;ui" --collect-all webview --collect-all cefpython3 main.py || goto :error
 echo.
-echo Готово: dist\Kassa.exe
+echo Готово: dist\Lotus.exe
 pause
 exit /b 0
 :error

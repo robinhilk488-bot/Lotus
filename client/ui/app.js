@@ -4,7 +4,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nf = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 const money = (v, cur = "₽") => `${nf.format(v || 0)} ${cur}`;
-const ACC_COLORS = ["#F2B544", "#7AA7FF", "#4FD1A1", "#C79BFF", "#FF9E7A", "#5FD3E6"];
+const ACC_COLORS = ["#A855F7", "#6D8BFF", "#C77DFF", "#4FD1A1", "#8B6DFF", "#E07DFF"];
 const STATUS = { paid: "Оплачен", closed: "Закрыт", refunded: "Возврат" };
 
 const state = { demo: false, server: "", page: "dashboard", lastEvent: 0, settings: null, timer: null };
@@ -334,6 +334,140 @@ pages.sales = async root => {
 
 // ---------- Плагины ----------
 let pluginFilter = "all";
+
+// ---------- полноэкранное окно настройки плагина ----------
+let _rentReopen = null;
+function reopenRent() { if (_rentReopen) _rentReopen(); }
+
+
+let _offlineReopen = null;
+async function renderOfflineInto(body, host) {
+  const [accs, list] = await Promise.all([api("GET", "/api/offline/accounts"), api("GET", "/api/plugins")]);
+  const p = list.find(x => x.id === "offline_activite");
+  const fieldsHtml = p.settings.map(st => {
+    const v = p.config[st.key] ?? st.default ?? "";
+    const hint = st.hint ? `<small class="hint">${esc(st.hint)}</small>` : "";
+    if (st.type === "bool") return `<div class="row"><div>${esc(st.label)}${hint}</div><label class="switch"><input type="checkbox" data-k="${st.key}" ${v ? "checked" : ""}><i></i></label></div>`;
+    return `<label class="field"><span>${esc(st.label)}</span><input data-k="${st.key}" value="${esc(v)}">${hint}</label>`;
+  }).join("");
+  body.innerHTML = `
+    <div class="page-head" style="margin-bottom:16px"><h1 style="font-size:22px">Offline Activite</h1><button class="btn primary" id="oa-add">Добавить аккаунт</button></div>
+    <div class="cfg-cols"><div>
+      ${accs.length ? `<section class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+        <thead><tr><th>Логин</th><th>maFile</th><th></th></tr></thead>
+        <tbody>${accs.map(a => `<tr><td><b>${esc(a.login)}</b></td><td>${a.has_mafile ? "есть" : `<span class="warn-text">нет</span>`}</td>
+          <td class="num"><button class="btn ghost danger" data-del="${esc(a.login)}">Удалить</button></td></tr>`).join("")}</tbody></table></div></section>`
+        : `<div class="panel empty" style="margin-bottom:16px"><h2>Аккаунтов нет</h2><p class="muted">Добавьте аккаунт: логин и maFile. По команде ${esc(p.config.command || "!guard")} бот выдаст покупателю код Steam Guard.</p></div>`}
+      <section class="panel"><form id="oa-form"><h2 style="margin-bottom:14px">Настройки</h2>${fieldsHtml}
+        <button class="btn primary">Сохранить</button></form></section>
+    </div>
+    <aside class="cfg-aside"><section class="panel"><h3 style="margin-bottom:6px">${esc(p.name)}</h3><p class="muted">${esc(p.description)}</p></section></aside></div>`;
+
+  $("#oa-add", body).onclick = () => modal(`<h2>Новый аккаунт</h2>
+    <label class="field"><span>Логин Steam</span><input name="login" autocomplete="off"></label>
+    <label class="field"><span>maFile (содержимое файла из Steam Desktop Authenticator)</span><textarea name="mafile" rows="4" placeholder='{"shared_secret":"…"}'></textarea>
+      <small class="hint">Нужен для генерации кода. Хранится на сервере в зашифрованном виде.</small></label>`,
+    "Добавить", async f => { await api("POST", "/api/offline/accounts", { login: f.login.value, mafile: f.mafile.value }); toast("Аккаунт добавлен"); _offlineReopen(); });
+  body.querySelectorAll("[data-del]").forEach(b => (b.onclick = () => {
+    modal(`<h2>Удалить ${esc(b.dataset.del)}?</h2><p class="muted">Код по этому аккаунту больше выдаваться не будет.</p>`,
+      "Удалить", async () => { await api("DELETE", `/api/offline/accounts/${encodeURIComponent(b.dataset.del)}`); toast("Удалён"); _offlineReopen(); });
+  }));
+  const form = $("#oa-form", body);
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const cfg = {};
+    p.settings.forEach(st => { const el = form.querySelector(`[data-k="${st.key}"]`); cfg[st.key] = st.type === "bool" ? el.checked : el.value; });
+    try { await api("PUT", `/api/plugins/offline_activite/config`, cfg); toast("Настройки сохранены"); } catch (err) { toast(err.message, true); }
+  };
+}
+
+async function openPluginConfig(id) {
+  const host = document.createElement("div");
+  host.className = "cfg-overlay";
+  host.innerHTML = `<div class="cfg-screen"><div class="cfg-top">
+      <button class="btn ghost cfg-back">← Назад к плагинам</button>
+      <div class="cfg-title" id="cfg-title"></div></div>
+      <div class="cfg-body" id="cfg-body"></div></div>`;
+  document.body.append(host);
+  const close = () => { host.remove(); document.onkeydown = null; go("plugins"); };
+  host.querySelector(".cfg-back").onclick = close;
+  document.onkeydown = e => { if (e.key === "Escape") close(); };
+  host.onmousedown = e => { if (e.target === host) close(); };
+  const body = host.querySelector("#cfg-body");
+  const titleEl = host.querySelector("#cfg-title");
+
+  if (id === "rent_steam") {
+    _rentReopen = () => renderRentInto(body);
+    titleEl.textContent = "Аренда Steam";
+    await renderRentInto(body);
+    return;
+  }
+
+  if (id === "offline_activite") {
+    titleEl.textContent = "Offline Activite";
+    _offlineReopen = () => renderOfflineInto(body, host);
+    await renderOfflineInto(body, host);
+    return;
+  }
+
+  const list = await api("GET", "/api/plugins");
+  const p = list.find(x => x.id === id);
+  if (!p) { close(); return; }
+  titleEl.textContent = p.name;
+  const label = s => `${esc(s.label)}${s.required ? ' <span class="req">обязательно</span>' : ""}`;
+  const hint = s => (s.hint ? `<small class="hint">${esc(s.hint)}</small>` : "");
+  const fields = p.settings.map(s => {
+    const v = p.config[s.key] ?? s.default ?? "";
+    if (s.type === "bool") return `<div class="row"><div>${label(s)}${hint(s)}</div><label class="switch"><input type="checkbox" name="${s.key}" ${v ? "checked" : ""}><i></i></label></div>`;
+    if (s.type === "secret") { const set = p.secrets_set[s.key];
+      return `<label class="field"><span>${label(s)}</span><div class="secret"><input name="${s.key}" type="password" autocomplete="off" placeholder="${set ? "Сохранён — пусто = не менять" : "Вставьте ключ"}">${set ? `<button type="button" class="btn ghost" data-clear="${s.key}">Стереть</button>` : ""}</div>${hint(s)}</label>`; }
+    if (s.type === "textarea") return `<label class="field"><span>${label(s)}</span><textarea name="${s.key}" rows="4">${esc(v)}</textarea>${hint(s)}</label>`;
+    if (s.type === "select") return `<label class="field"><span>${label(s)}</span><select name="${s.key}">${(s.options || []).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>${hint(s)}</label>`;
+    return `<label class="field"><span>${label(s)}</span><input name="${s.key}" type="${s.type === "number" ? "number" : "text"}" step="any" value="${esc(v)}">${hint(s)}</label>`;
+  }).join("");
+  body.innerHTML = `<div class="cfg-cols">
+    <section class="panel"><form id="cfg-form">
+      ${p.settings.length ? `<h2 style="margin-bottom:14px">Настройки</h2><p class="muted" style="margin-bottom:16px">Ключи и пароли хранятся на сервере в зашифрованном виде и не показываются повторно.</p>${fields}
+      <button class="btn primary">Сохранить</button>` : `<h2>У плагина нет настроек</h2><p class="muted" style="margin-top:8px">Он работает сразу после включения.</p>`}
+    </form></section>
+    <aside class="cfg-aside">
+      <section class="panel"><h3 style="margin-bottom:6px">${esc(p.name)}</h3><p class="muted">${esc(p.description)}</p>
+        <div class="plugin-meta" style="margin-top:12px"><span>Выполнено: ${p.tasks.done}</span>${p.tasks.attention ? `<span class="warn-text">Проверка: ${p.tasks.attention}</span>` : ""}</div></section>
+      ${p.can_test || p.can_dry_run ? `<section class="panel"><h3 style="margin-bottom:12px">Проверка</h3>
+        ${p.can_test ? `<button class="btn wide" id="cfg-test" style="margin-bottom:10px">Проверить подключение</button>` : ""}
+        ${p.can_dry_run ? `<button class="btn wide" id="cfg-dry">Пробный запуск</button>` : ""}
+        <div id="cfg-check"></div></section>` : ""}
+    </aside></div>`;
+
+  const clear = new Set();
+  body.querySelectorAll("[data-clear]").forEach(x => (x.onclick = () => {
+    clear.add(x.dataset.clear); const inp = x.previousElementSibling; inp.placeholder = "Будет стёрт при сохранении"; inp.value = ""; x.remove();
+  }));
+  const form = body.querySelector("#cfg-form");
+  if (p.settings.length) form.onsubmit = async e => {
+    e.preventDefault();
+    const cfg = { __clear__: [...clear] };
+    p.settings.forEach(s => { const el = form.elements[s.key]; cfg[s.key] = s.type === "bool" ? el.checked : s.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value; });
+    try { await api("PUT", `/api/plugins/${p.id}/config`, cfg); toast("Настройки сохранены"); } catch (err) { toast(err.message, true); }
+  };
+  const test = body.querySelector("#cfg-test");
+  if (test) test.onclick = async () => {
+    test.disabled = true; test.textContent = "Проверяю…";
+    try { const r = await api("POST", `/api/plugins/${p.id}/test`); body.querySelector("#cfg-check").innerHTML = `<div class="result ${r.ok ? "ok" : "bad"}"><b>${esc(r.message)}</b></div>`; }
+    catch (e) { toast(e.message, true); } finally { test.disabled = false; test.textContent = "Проверить подключение"; }
+  };
+  const dry = body.querySelector("#cfg-dry");
+  if (dry) dry.onclick = () => modal(`<h2>Пробный запуск</h2>
+    <p class="muted">Плагин обработает выдуманный заказ: ничего не покупает и не отправляет.</p>
+    <label class="field"><span>Название лота, как на FunPay</span><input name="description" value="Пробный заказ"></label>
+    <label class="field"><span>Сумма, ₽</span><input name="amount" type="number" step="any" value="100"></label><div id="dry-out"></div>`,
+    "Запустить", async f => {
+      const r = await api("POST", `/api/plugins/${p.id}/dry-run`, { description: f.description.value, amount: Number(f.amount.value) });
+      $("#dry-out").innerHTML = `<div class="result ${r.ok ? "ok" : "bad"}"><b>${esc(r.message)}</b>${r.log.length ? `<pre>${esc(r.log.join("\n"))}</pre>` : ""}</div>`;
+      return "keep";
+    });
+}
+
 pages.plugins = async root => {
   const [list, tasks] = await Promise.all([api("GET", "/api/plugins"), api("GET", "/api/tasks?limit=60")]);
   const shown = list.filter(p => pluginFilter === "all" || (pluginFilter === "on" ? p.enabled : p.ready));
@@ -372,9 +506,7 @@ pages.plugins = async root => {
           </div>
         </div>
         <div class="plugin-actions">
-          ${p.settings.length ? `<button class="btn" data-cfg="${p.id}">Настроить</button>` : ""}
-          ${p.can_test ? `<button class="btn" data-test="${p.id}">Проверить</button>` : ""}
-          ${p.can_dry_run ? `<button class="btn" data-dry="${p.id}">Пробный запуск</button>` : ""}
+          <button class="btn" data-cfg="${p.id}">Настроить</button>
         </div>
         <label class="switch" title="${p.enabled ? "Выключить" : "Включить"}"><input type="checkbox" data-on="${p.id}" ${p.enabled ? "checked" : ""}><i></i></label>
       </section>` : `
@@ -403,60 +535,7 @@ pages.plugins = async root => {
     catch (e) { c.checked = !c.checked; toast(e.message, true); }
   }));
 
-  root.querySelectorAll("[data-cfg]").forEach(b => (b.onclick = () => {
-    const p = list.find(x => x.id === b.dataset.cfg);
-    const label = s => `${esc(s.label)}${s.required ? ' <span class="req">обязательно</span>' : ""}`;
-    const hint = s => (s.hint ? `<small class="hint">${esc(s.hint)}</small>` : "");
-    const fields = p.settings.map(s => {
-      const v = p.config[s.key] ?? s.default ?? "";
-      if (s.type === "bool") return `<div class="row"><div>${label(s)}${hint(s)}</div><label class="switch"><input type="checkbox" name="${s.key}" ${v ? "checked" : ""}><i></i></label></div>`;
-      if (s.type === "secret") {
-        const set = p.secrets_set[s.key];
-        return `<label class="field"><span>${label(s)}</span>
-          <div class="secret"><input name="${s.key}" type="password" autocomplete="off" placeholder="${set ? "Сохранён — пусто = не менять" : "Вставьте ключ"}">
-          ${set ? `<button type="button" class="btn ghost" data-clear="${s.key}">Стереть</button>` : ""}</div>${hint(s)}</label>`;
-      }
-      if (s.type === "textarea") return `<label class="field"><span>${label(s)}</span><textarea name="${s.key}" rows="4">${esc(v)}</textarea>${hint(s)}</label>`;
-      if (s.type === "select") return `<label class="field"><span>${label(s)}</span><select name="${s.key}">${(s.options || []).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>${hint(s)}</label>`;
-      return `<label class="field"><span>${label(s)}</span><input name="${s.key}" type="${s.type === "number" ? "number" : "text"}" step="any" value="${esc(v)}">${hint(s)}</label>`;
-    }).join("");
-    const clear = new Set();
-    modal(`<h2>${esc(p.name)}</h2><p class="muted">Ключи и пароли хранятся на сервере в зашифрованном виде и не показываются повторно.</p>${fields}`, "Сохранить", async f => {
-      const cfg = { __clear__: [...clear] };
-      p.settings.forEach(s => {
-        const el = f.elements[s.key];
-        cfg[s.key] = s.type === "bool" ? el.checked : s.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value;
-      });
-      await api("PUT", `/api/plugins/${p.id}/config`, cfg);
-      toast("Настройки плагина сохранены");
-      go("plugins");
-    });
-    document.querySelectorAll("[data-clear]").forEach(x => (x.onclick = () => {
-      clear.add(x.dataset.clear);
-      const inp = x.previousElementSibling; inp.placeholder = "Будет стёрт при сохранении"; inp.value = "";
-      x.remove();
-    }));
-  }));
-
-  root.querySelectorAll("[data-test]").forEach(b => (b.onclick = async () => {
-    b.disabled = true; b.textContent = "Проверяю…";
-    try { const r = await api("POST", `/api/plugins/${b.dataset.test}/test`); toast((r.ok ? "Работает: " : "Не работает: ") + r.message, !r.ok); }
-    catch (e) { toast(e.message, true); }
-    finally { b.disabled = false; b.textContent = "Проверить"; }
-  }));
-
-  root.querySelectorAll("[data-dry]").forEach(b => (b.onclick = () => {
-    const p = list.find(x => x.id === b.dataset.dry);
-    modal(`<h2>Пробный запуск: ${esc(p.name)}</h2>
-      <p class="muted">Плагин обработает выдуманный заказ в пробном режиме: ничего не покупает и ничего не отправляет. Так видно, сработает ли привязка лота и настройки.</p>
-      <label class="field"><span>Название лота, как на FunPay</span><input name="description" value="Пробный заказ"></label>
-      <label class="field"><span>Сумма, ₽</span><input name="amount" type="number" step="any" value="100"></label>
-      <div id="dry-out"></div>`, "Запустить", async f => {
-      const r = await api("POST", `/api/plugins/${p.id}/dry-run`, { description: f.description.value, amount: Number(f.amount.value) });
-      $("#dry-out").innerHTML = `<div class="result ${r.ok ? "ok" : "bad"}"><b>${esc(r.message)}</b>${r.log.length ? `<pre>${esc(r.log.join("\n"))}</pre>` : ""}</div>`;
-      return "keep";
-    });
-  }));
+  root.querySelectorAll("[data-cfg]").forEach(b => (b.onclick = () => openPluginConfig(b.dataset.cfg)));
 
   root.querySelectorAll("[data-retry]").forEach(b => (b.onclick = () => {
     const t = attention.find(x => x.id === +b.dataset.retry);
@@ -649,8 +728,8 @@ pages.delivery = async root => {
 };
 
 // ---------- Аренда Steam ----------
-pages.rent = async root => {
-  const [accs, plist] = await Promise.all([api("GET", "/api/rent/accounts"), api("GET", "/api/plugins")]);
+async function renderRentInto(root) {
+  const [accs, plist, onlypc] = await Promise.all([api("GET", "/api/rent/accounts"), api("GET", "/api/plugins"), api("GET", "/api/rent/onlypc").catch(() => [])]);
   const pl = plist.find(p => p.id === "rent_steam");
   const cfg = pl?.config || {};
   const busy = a => !!a.rented_until && a.rented_by;
@@ -665,6 +744,16 @@ pages.rent = async root => {
         ${pl?.missing?.length ? `<p class="warn-text small" style="margin-top:8px">Заполните в настройках плагина: ${esc(pl.missing.join(", "))}</p>` : ""}</div>
       <label class="switch"><input type="checkbox" id="rent-on" ${pl?.enabled ? "checked" : ""}><i></i></label>
     </section>
+    ${onlypc.length ? `<section class="panel alert" style="margin-top:16px">
+      <div class="panel-head"><h2>Проверка OnlyPC: ${onlypc.length}</h2></div>
+      <p class="muted" style="margin-bottom:12px">Посмотрите фото покупателя в разделе «Чаты» и решите: выдать аккаунт или отклонить.</p>
+      ${onlypc.map(j => `<div class="task">
+        <div><b>#${esc(j.order_id)}</b> · ${esc(j.buyer)} · ${j.got_photo ? "прислал фото/сообщение" : `<span class="warn-text">ещё не прислал</span>`}</div>
+        <div class="task-actions">
+          <button class="btn primary" data-pc-ok="${esc(j.order_id)}" ${j.got_photo ? "" : "disabled"}>Выдать</button>
+          <button class="btn ghost danger" data-pc-no="${esc(j.order_id)}">Отклонить</button>
+        </div></div>`).join("")}
+    </section>` : ""}
 
     <section class="panel" style="margin-top:16px">
       <div class="panel-head"><h2>Тексты и лот продления</h2><button class="btn" id="cfg-btn">Настроить</button></div>
@@ -681,6 +770,7 @@ pages.rent = async root => {
         <td class="muted">${a.rented_by ? esc(a.rented_by) : "—"}</td>
         <td><div class="row-actions">
           ${a.state === "needs_reset" ? `<button class="btn" data-reset="${esc(a.login)}">Сброс выполнен</button>` : ""}
+          ${a.has_mafile ? `<button class="btn" data-logout="${esc(a.login)}" title="Выйти на всех устройствах, пароль не меняется">Завершить сессии</button>` : ""}
           ${a.has_mafile ? `<button class="btn" data-test="${esc(a.login)}">Проверить вход</button>` : ""}
           <button class="btn" data-edit="${esc(a.login)}">Изменить</button>
           <button class="btn ghost danger" data-del="${esc(a.login)}">Удалить</button>
@@ -689,8 +779,18 @@ pages.rent = async root => {
       </tr>`).join("")}</tbody></table></div></section>`
     : `<div class="panel empty" style="margin-top:16px"><h2>Аккаунтов для аренды нет</h2><p class="muted">Добавьте Steam-аккаунт: логин, пароль и maFile (файл из Steam Desktop Authenticator). Без maFile не будет кодов Guard и автоматической смены пароля.</p></div>`}`;
 
+  root.querySelectorAll("[data-pc-ok]").forEach(b => (b.onclick = () => {
+    const id = b.dataset.pcOk;
+    modal(`<h2>Выдать аккаунт по заказу #${esc(id)}?</h2><p class="muted">Нажимайте, только если проверили фото и покупатель действительно в компьютерном клубе. Бот сразу выдаст ему свободный аккаунт.</p>`,
+      "Выдать", async () => { const r = await api("POST", `/api/rent/onlypc/${encodeURIComponent(id)}/approve`); toast(r.message || "Аккаунт выдан"); reopenRent(); });
+  }));
+  root.querySelectorAll("[data-pc-no]").forEach(b => (b.onclick = () => {
+    const id = b.dataset.pcNo;
+    modal(`<h2>Отклонить заказ #${esc(id)}?</h2><p class="muted">Покупателю уйдёт сообщение, что проверка не пройдена. Деньги вернёте вручную на FunPay при необходимости.</p>`,
+      "Отклонить", async () => { await api("POST", `/api/rent/onlypc/${encodeURIComponent(id)}/reject`); toast("Отклонено"); reopenRent(); });
+  }));
   $("#rent-on").onchange = async e => {
-    try { await api("POST", "/api/plugins/rent_steam/enabled", { enabled: e.target.checked }); toast(e.target.checked ? "Аренда включена" : "Аренда выключена"); go("rent"); }
+    try { await api("POST", "/api/plugins/rent_steam/enabled", { enabled: e.target.checked }); toast(e.target.checked ? "Аренда включена" : "Аренда выключена"); reopenRent(); }
     catch (err) { e.target.checked = !e.target.checked; toast(err.message, true); }
   };
   root.querySelectorAll("[data-show]").forEach(b => (b.onclick = () => {
@@ -704,11 +804,13 @@ pages.rent = async root => {
     <label class="field"><span>Логин Steam</span><input name="login" value="${esc(a.login || "")}" ${a.login ? "readonly" : ""} autocomplete="off"></label>
     <label class="field"><span>Пароль</span><input name="password" type="text" autocomplete="off" placeholder="${a.login ? "Оставьте пустым, чтобы не менять" : ""}"></label>
     <label class="field"><span>maFile (содержимое файла из Steam Desktop Authenticator)</span><textarea name="mafile" rows="4" placeholder='${a.has_mafile ? "maFile загружен. Вставьте новый, чтобы заменить" : '{"shared_secret":"…", "account_name":"…"}'}'></textarea>
-      <small class="hint">Нужен для кодов Guard и смены пароля. Хранится на сервере в зашифрованном виде.</small></label>`;
+      <small class="hint">Нужен для кодов Guard и смены пароля. Хранится на сервере в зашифрованном виде.</small></label>
+    <label class="field"><span>ID лота этого аккаунта на FunPay (необязательно)</span><input name="offer_id" value="${esc(a.offer_id || "")}" placeholder="Число из ссылки offer?id=...">
+      <small class="hint">Если указать — лот будет скрываться на время аренды (можно отключить в настройках плагина).</small></label>`;
 
   $("#add-acc").onclick = () => modal(`<h2>Новый аккаунт для аренды</h2>${accForm()}`, "Добавить", async f => {
-    await api("POST", "/api/rent/accounts", { login: f.login.value, password: f.password.value, mafile: f.mafile.value });
-    toast("Аккаунт добавлен"); go("rent");
+    await api("POST", "/api/rent/accounts", { login: f.login.value, password: f.password.value, mafile: f.mafile.value, offer_id: f.offer_id.value });
+    toast("Аккаунт добавлен"); reopenRent();
   });
   root.querySelectorAll("[data-edit]").forEach(b => (b.onclick = () => {
     const a = accs.find(x => x.login === b.dataset.edit);
@@ -716,12 +818,21 @@ pages.rent = async root => {
       const body = {};
       if (f.password.value.trim()) body.password = f.password.value.trim();
       if (f.mafile.value.trim()) body.mafile = f.mafile.value.trim();
-      await api("PUT", `/api/rent/accounts/${encodeURIComponent(a.login)}`, body); toast("Сохранено"); go("rent");
+      body.offer_id = f.offer_id.value;
+      await api("PUT", `/api/rent/accounts/${encodeURIComponent(a.login)}`, body); toast("Сохранено"); reopenRent();
     });
   }));
   root.querySelectorAll("[data-acc-on]").forEach(c => (c.onchange = async () => {
     try { await api("PUT", `/api/rent/accounts/${encodeURIComponent(c.dataset.accOn)}`, { enabled: c.checked }); toast(c.checked ? "Аккаунт включён" : "Аккаунт выключен"); }
     catch (e) { c.checked = !c.checked; toast(e.message, true); }
+  }));
+  root.querySelectorAll("[data-logout]").forEach(b => (b.onclick = () => {
+    const login = b.dataset.logout;
+    modal(`<h2>Завершить сессии: ${esc(login)}?</h2><p class="muted">Аккаунт выйдет на всех устройствах, пароль НЕ меняется. Полезно, если нужно выкинуть игрока вручную.</p>`,
+      "Завершить", async () => {
+        const r = await api("POST", `/api/rent/accounts/${encodeURIComponent(login)}/logout`);
+        toast(r.message || "Сессии завершены");
+      });
   }));
   root.querySelectorAll("[data-test]").forEach(b => (b.onclick = async () => {
     b.disabled = true; b.textContent = "Проверяю…";
@@ -734,12 +845,12 @@ pages.rent = async root => {
     modal(`<h2>Сброс доступа: ${esc(login)}</h2>
       <p class="muted">Смена пароля не прошла автоматически. Зайдите в Steam, выйдите на всех устройствах, при желании смените пароль. Если сменили — впишите новый ниже, чтобы приложение его показывало.</p>
       <label class="field"><span>Новый пароль (если меняли)</span><input name="password" type="text" autocomplete="off" placeholder="Можно оставить пустым"></label>`,
-      "Аккаунт свободен", async f => { await api("POST", `/api/rent/accounts/${encodeURIComponent(login)}/reset-done`, { password: f.password.value }); toast("Аккаунт освобождён"); go("rent"); });
+      "Аккаунт свободен", async f => { await api("POST", `/api/rent/accounts/${encodeURIComponent(login)}/reset-done`, { password: f.password.value }); toast("Аккаунт освобождён"); reopenRent(); });
   }));
   root.querySelectorAll("[data-del]").forEach(b => (b.onclick = () => {
     const login = b.dataset.del;
     modal(`<h2>Удалить аккаунт ${esc(login)}?</h2><p class="muted">Он больше не будет сдаваться в аренду.</p>`,
-      "Удалить", async () => { await api("DELETE", `/api/rent/accounts/${encodeURIComponent(login)}`); toast("Удалён"); go("rent"); });
+      "Удалить", async () => { await api("DELETE", `/api/rent/accounts/${encodeURIComponent(login)}`); toast("Удалён"); reopenRent(); });
   }));
 
   $("#cfg-btn").onclick = () => {
@@ -755,7 +866,7 @@ pages.rent = async root => {
     modal(`<h2>Настройка аренды</h2><p class="muted">Подстановки: {buyer}, {login}, {password}, {until}, {hours}, {code}, {link}.</p>${fields}`, "Сохранить", async f => {
       const c = {};
       p.settings.forEach(st => { c[st.key] = st.type === "number" ? Number(f.elements[st.key].value) : f.elements[st.key].value; });
-      await api("PUT", "/api/plugins/rent_steam/config", c); toast("Настройки сохранены"); go("rent");
+      await api("PUT", "/api/plugins/rent_steam/config", c); toast("Настройки сохранены"); reopenRent();
     });
   };
 };
@@ -802,7 +913,7 @@ pages.subscription = async root => {
   const sub = await api("GET", "/api/subscription");
   const fmt = ts => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }).replace(/ г\.$/, "");
   const LOTS = state.subLots || (state.demo ? { 1: "https://funpay.com/lots/offer?id=1", 3: "https://funpay.com/lots/offer?id=3", 6: "https://funpay.com/lots/offer?id=6", 12: "https://funpay.com/lots/offer?id=12" } : {});  // ссылки на лоты задаёшь ты, см. ниже
-  const plans = [[1, "1 месяц"], [3, "3 месяца"], [6, "6 месяцев"], [12, "12 месяцев"]];
+  const plans = [[1, "1 месяц", 349], [3, "3 месяца", 899], [6, "6 месяцев", 1690], [12, "12 месяцев", 2990]];
 
   if (!sub.configured) {
     root.innerHTML = `<div class="page-head"><h1>Подписка</h1></div>
@@ -838,8 +949,8 @@ pages.subscription = async root => {
     <section class="panel" style="margin-top:16px">
       <h2>Купить подписку</h2>
       <p class="muted" style="margin:4px 0 14px">После оплаты код придёт вам в чат FunPay автоматически.</p>
-      <div class="plan-grid">${plans.map(([m, name]) => `
-        <div class="plan"><div class="plan-name">${name}</div>
+      <div class="plan-grid">${plans.map(([m, name, price]) => `
+        <div class="plan"><div class="plan-name">${name}</div><div class="plan-price">${price} ₽</div>
           ${LOTS[m] ? `<a class="btn primary" href="${esc(LOTS[m])}" target="_blank" rel="noopener">Купить на FunPay</a>`
                     : `<span class="muted small">Ссылка на лот не задана</span>`}</div>`).join("")}</div>
       ${state.demo ? "" : `<p class="muted small" style="margin-top:12px">Ссылки на ваши лоты задаются в файле сервера (см. README).</p>`}

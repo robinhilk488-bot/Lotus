@@ -42,4 +42,4 @@ def test():
     s = db.get_settings()
     if not s["tg_token"] or not s["tg_chat_id"]:
         raise RuntimeError("Заполните токен бота и ваш Telegram ID")
-    send_raw(s["tg_token"], s["tg_chat_id"], "✅ Kassa: уведомления работают.")
+    send_raw(s["tg_token"], s["tg_chat_id"], "✅ Lotus: уведомления работают.")

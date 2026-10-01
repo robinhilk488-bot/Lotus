@@ -1,17 +1,18 @@
 :root {
-  --ink: #101A2E;       /* фон */
-  --panel: #16233D;     /* панели */
-  --panel-2: #1C2C4B;   /* поля ввода, наведение */
-  --line: #253962;      /* границы */
-  --text: #EAF0FA;
-  --muted: #8C9BBB;
-  --gold: #F2B544;      /* деньги и главное действие */
-  --gold-dim: rgba(242, 181, 68, .14);
+  --ink: #0B0710;       /* фон */
+  --panel: #151022;     /* панели */
+  --panel-2: #1C1430;   /* поля ввода, наведение */
+  --line: #2A2040;      /* границы */
+  --text: #EDE7F6;
+  --muted: #9A8FB5;
+  --gold: #C77DFF;      /* акцент (бывш. золотой) — теперь фиолетовый неон */
+  --gold-dim: rgba(168, 85, 247, .16);
+  --violet: #A855F7;
   --mint: #4FD1A1;
   --coral: #FF7A6B;
-  --sky: #7AA7FF;
-  --ui: "Manrope", "Segoe UI", system-ui, sans-serif;
-  --display: "Unbounded", "Manrope", "Segoe UI", sans-serif;
+  --sky: #6D8BFF;
+  --ui: "Inter", "Manrope", "Segoe UI", system-ui, sans-serif;
+  --display: "Space Grotesk", "Inter", "Segoe UI", sans-serif;
   --r-sm: 8px;
   --r-md: 14px;
 }
@@ -56,8 +57,8 @@ pre {
   transition: background .15s, border-color .15s;
 }
 .btn:hover { border-color: #3A5285; }
-.btn.primary { background: var(--gold); color: #1B1405; border-color: var(--gold); }
-.btn.primary:hover { background: #F6C566; }
+.btn.primary { background: linear-gradient(135deg, var(--violet), var(--sky)); color: #fff; border-color: transparent; box-shadow: 0 4px 18px rgba(168, 85, 247, .35); }
+.btn.primary:hover { filter: brightness(1.08); box-shadow: 0 6px 24px rgba(168, 85, 247, .5); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn.ghost:hover { color: var(--text); }
 .btn.danger { color: var(--coral); }
@@ -65,6 +66,7 @@ pre {
 .btn:disabled { opacity: .55; cursor: default; }
 
 input, textarea, select {
+  -webkit-user-select: text; user-select: text;
   width: 100%; font: 14px var(--ui); color: var(--text); background: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 12px; resize: vertical;
 }
@@ -357,4 +359,16 @@ td .switch { display: inline-block; }
 .sub-activate input { font-family: Consolas, monospace; letter-spacing: 1px; text-transform: uppercase; }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .plan { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 16px; text-align: center; }
-.plan-name { font-weight: 700; margin-bottom: 12px; }
+.plan-name { font-weight: 700; margin-bottom: 4px; }
+.plan-price { font-family: var(--display); font-size: 22px; font-weight: 700; color: var(--violet-soft); margin-bottom: 12px; }
+
+/* ---------- полноэкранное окно настройки плагина ---------- */
+.cfg-overlay { position: fixed; inset: 0; z-index: 30; background: var(--ink); overflow-y: auto; animation: fade .15s ease-out; }
+@keyframes fade { from { opacity: 0; } }
+.cfg-screen { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
+.cfg-top { display: flex; align-items: center; gap: 18px; padding: 8px 0 22px; position: sticky; top: 0; background: var(--ink); z-index: 1; }
+.cfg-title { font-family: var(--display); font-size: 22px; font-weight: 700; }
+.cfg-cols { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+.cfg-aside { display: flex; flex-direction: column; gap: 16px; }
+.btn.wide { width: 100%; text-align: center; }
+@media (max-width: 900px) { .cfg-cols { grid-template-columns: 1fr; } .cfg-screen { padding: 16px 18px 40px; } }

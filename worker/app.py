@@ -386,7 +386,8 @@ def rent_accounts():
                     "enabled": a.get("enabled", True), "state": a.get("state", "free"),
                     "rented_until": rent[1]["until"] if rent else None,
                     "rented_by": rent[1]["buyer"] if rent else None,
-                    "order_id": rent[0] if rent else None})
+                    "order_id": rent[0] if rent else None,
+                    "offer_id": a.get("offer_id", "")})
     return jsonify(out)
 
 
@@ -407,7 +408,8 @@ def rent_add():
     if any(x["login"].lower() == login.lower() for x in accs):
         return err(f"Аккаунт {login} уже добавлен")
     accs.append({"login": login, "password": encrypt(password),
-                 "shared_secret": encrypt(ss) if ss else "", "enabled": True, "state": "free"})
+                 "shared_secret": encrypt(ss) if ss else "", "enabled": True, "state": "free",
+                 "offer_id": (d.get("offer_id") or "").strip()})
     _rent._kv_set("accounts", accs)
     db.log(f"Аренда: добавлен аккаунт {login}")
     return jsonify(ok=True)
@@ -422,6 +424,8 @@ def rent_edit(login):
         return err("Аккаунт не найден", 404)
     if "enabled" in d:
         acc["enabled"] = bool(d["enabled"])
+    if "offer_id" in d:
+        acc["offer_id"] = (d.get("offer_id") or "").strip()
     if d.get("password"):
         acc["password"] = encrypt(d["password"].strip())
     if d.get("mafile"):
@@ -456,6 +460,38 @@ def rent_test(login):
     return jsonify(ok=True, message="Вход работает, пароль верный")
 
 
+@app.get("/api/rent/onlypc")
+def onlypc_list():
+    return jsonify(_rent.onlypc_pending())
+
+
+@app.post("/api/rent/onlypc/<order_id>/<decision>")
+def onlypc_decide(order_id, decision):
+    from core import plugins as _pl
+    try:
+        res = _rent.onlypc_decide(order_id, decision == "approve", _pl.Ctx("rent_steam"))
+    except ValueError as e:
+        return err(str(e))
+    except Exception as e:
+        return err(str(e), 502)
+    return jsonify(ok=True, message=res)
+
+
+@app.post("/api/rent/accounts/<login>/logout")
+def rent_logout(login):
+    acc = next((a for a in _rent.steam_accounts() if a["login"] == login), None)
+    if not acc:
+        return err("Аккаунт не найден", 404)
+    if not acc.get("shared_secret"):
+        return err("Нужен maFile, чтобы войти и завершить сессии")
+    try:
+        _steam.logout_everywhere(acc["login"], acc["password"], acc["shared_secret"])
+    except Exception as e:
+        return err(f"Не удалось завершить сессии: {e}", 502)
+    db.log(f"Аренда: завершены сессии аккаунта {login}")
+    return jsonify(ok=True, message="Все сессии аккаунта завершены")
+
+
 @app.post("/api/rent/accounts/<login>/reset-done")
 def rent_reset_done(login):
     """Продавец вручную сбросил доступ — освобождаем аккаунт."""
@@ -474,6 +510,32 @@ def rent_reset_done(login):
             rent["status"] = "done"
     _rent.save_rentals(r)
     db.log(f"Аренда: аккаунт {login} освобождён вручную")
+    return jsonify(ok=True)
+
+
+# ---------- Offline Activite: аккаунты ----------
+from plugins import offline_activite as _oa  # noqa: E402
+from core import steam as _steam2  # noqa: E402
+
+
+@app.get("/api/offline/accounts")
+def offline_accounts():
+    return jsonify(_oa.accounts_public())
+
+
+@app.post("/api/offline/accounts")
+def offline_add():
+    d = request.get_json(force=True)
+    try:
+        _oa.add_account(d.get("login", ""), d.get("mafile", ""))
+    except (_steam2.SteamError, ValueError) as e:
+        return err(str(e))
+    return jsonify(ok=True)
+
+
+@app.delete("/api/offline/accounts/<login>")
+def offline_delete(login):
+    _oa.remove_account(login)
     return jsonify(ok=True)
 
 

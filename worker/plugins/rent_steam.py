@@ -18,9 +18,10 @@
 на сервере в зашифрованном виде.
 """
 import json
+import re
 import time
 
-from core import db
+from core import accounts, db
 from core.crypto import decrypt, encrypt
 from core.notify import notify
 from core.steam import SteamError, change_password, guard_code, new_password
@@ -47,6 +48,18 @@ SETTINGS = [
      "hint": "Создайте отдельный лот «Продление аренды», держите его выключенным. ID — число из ссылки offer?id=... на лот."},
     {"key": "extend_command", "label": "Команда продления", "type": "text", "default": "!продлить"},
     {"key": "remind_before_min", "label": "Напоминать за, минут", "type": "number", "default": 15},
+    {"key": "review_bonus_min_hours", "label": "Час за отзыв только если куплено от, часов", "type": "number", "default": 2,
+     "hint": "Чтобы не дарить час за отзыв тем, кто взял аренду всего на час. 0 — давать всегда."},
+    {"key": "hide_lot_on_rent", "label": "Скрывать лот аккаунта на время аренды", "type": "bool", "default": True,
+     "hint": "Если указан ID лота у аккаунта, он прячется на время аренды, чтобы не купили занятый. Выключите, если лот один на несколько аккаунтов."},
+    {"key": "onlypc_check", "label": "Проверка OnlyPC (фото из клуба)", "type": "bool", "default": False,
+     "hint": "Если включено, после оплаты бот просит фото из компьютерного клуба и ждёт вашего решения. Постоянников добавьте в белый список — им выдаётся сразу."},
+    {"key": "onlypc_ask", "label": "Запрос фото", "type": "textarea",
+     "default": "Спасибо за заказ! Пришлите, пожалуйста, фото, что вы находитесь в компьютерном клубе. После проверки выдам аккаунт."},
+    {"key": "onlypc_wait", "label": "Ответ после получения фото", "type": "text",
+     "default": "Фото получено, проверяю. Аккаунт выдам в течение нескольких минут."},
+    {"key": "onlypc_whitelist", "label": "Белый список (ссылки на профили FunPay)", "type": "textarea", "default": "",
+     "hint": "По одной ссылке на строку, например https://funpay.com/users/123456/. Этим покупателям аккаунт выдаётся сразу, без фото."},
 ]
 
 
@@ -120,30 +133,64 @@ def on_new_order(order, ctx):
     if not hours:
         raise Exception("Не удалось прочитать количество часов из заказа — аренда не выдана")
 
-    acc = None if ctx.dry_run else _free_account()
     if ctx.dry_run:
-        ctx.log(f"Пробный запуск: выдал бы свободный аккаунт на {hours} ч")
+        ctx.log(f"Пробный запуск: выдал бы свободный аккаунт на {hours} ч"
+                + (" (с проверкой OnlyPC)" if cfg.get("onlypc_check") and not _in_whitelist(order.get("buyer_id"), cfg) else ""))
         return "dry-run"
+
+    # OnlyPC: если включено и покупатель НЕ в белом списке — не выдаём, просим фото
+    if cfg.get("onlypc_check") and not _in_whitelist(order.get("buyer_id"), cfg):
+        p = _kv("pending_photo", {})
+        p[order["id"]] = {"buyer": order["buyer"], "buyer_id": order.get("buyer_id"),
+                          "account_id": order["account_id"], "hours": hours,
+                          "chat_id": None, "created": time.time(), "reminded": False, "got_photo": False}
+        _kv_set("pending_photo", p)
+        try:
+            ctx.send_message(order, cfg["onlypc_ask"])
+        except Exception as e:
+            raise ctx.Retry(f"не удалось запросить фото: {e}", delay=30)
+        db.log(f"Аренда #{order['id']}: запрошено фото OnlyPC у {order['buyer']}", "order")
+        return "Ожидает фото OnlyPC"
+
+    return _issue_account(order["id"], order["buyer"], order.get("buyer_id"),
+                          order["account_id"], hours, ctx)
+
+
+def _in_whitelist(buyer_id, cfg):
+    if not buyer_id:
+        return False
+    ids = set()
+    for line in (cfg.get("onlypc_whitelist") or "").splitlines():
+        m = re.search(r"/users/(\d+)", line) or re.search(r"\b(\d{3,})\b", line)
+        if m:
+            ids.add(m.group(1))
+    return str(buyer_id) in ids
+
+
+def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx):
+    acc = _free_account()
     if not acc:
-        notify("stock", f"🎮 Нет свободных Steam-аккаунтов для заказа #{order['id']}. Аренда не выдана.")
+        notify("stock", f"🎮 Нет свободных Steam-аккаунтов для заказа #{order_id}. Аренда не выдана.")
         raise Exception("Нет свободных аккаунтов. Добавьте аккаунт и нажмите «Повторить».")
-
     until = time.time() + hours * 3600
-    text = _fill(cfg["issue_text"], buyer=order["buyer"], login=acc["login"], password=acc["password"],
+    text = _fill(ctx.config["issue_text"], buyer=buyer, login=acc["login"], password=acc["password"],
                  until=_hm(until), hours=hours)
-    try:
-        ctx.send_message(order, text)
-    except Exception as e:
-        raise ctx.Retry(f"не удалось отправить данные покупателю: {e}", delay=30)
-
+    with accounts.use(account_id) as fp:
+        fp.send_message(fp.chat_with(buyer_id), text) if buyer_id else None
     r = rentals()
-    r[order["id"]] = {
-        "status": "active", "buyer": order["buyer"], "buyer_id": order.get("buyer_id"),
-        "account_id": order["account_id"], "chat_id": None, "steam_login": acc["login"],
+    r[order_id] = {
+        "status": "active", "buyer": buyer, "buyer_id": buyer_id,
+        "account_id": account_id, "chat_id": None, "steam_login": acc["login"],
         "until": until, "hours": hours, "reminded": False, "review_bonus": False, "started": time.time(),
+        "offer_id": acc.get("offer_id", ""),
     }
     save_rentals(r)
-    db.log(f"Аренда #{order['id']}: выдан {acc['login']} на {hours} ч (до {_hm(until)})", "order")
+    if ctx.config.get("hide_lot_on_rent", True) and acc.get("offer_id"):
+        try:
+            ctx.set_lot_active(account_id, acc["offer_id"], False)
+        except Exception as e:
+            ctx.log(f"не удалось скрыть лот {acc['offer_id']}: {e}", "warn")
+    db.log(f"Аренда #{order_id}: выдан {acc['login']} на {hours} ч (до {_hm(until)})", "order")
     return f"Аренда до {_hm(until)}"
 
 
@@ -176,6 +223,23 @@ def on_message(msg, chat, ctx):
     text = (msg.get("text") or "").strip()
     low = text.lower()
     cfg = ctx.config
+
+    # OnlyPC: покупатель, у которого запрошено фото, прислал сообщение/картинку
+    photos = _kv("pending_photo", {})
+    for po_id, job in list(photos.items()):
+        if job["account_id"] == chat["account_id"] and (job["buyer"] or "").lower() == (chat["name"] or "").lower():
+            if job.get("got_photo"):
+                return True  # уже ждём решения владельца — молчим
+            job["got_photo"] = True
+            job["chat_id"] = chat["id"]
+            photos[po_id] = job
+            _kv_set("pending_photo", photos)
+            kind = "фото" if "[изображение]" in text else "сообщение"
+            notify("attention", f"🖼 Нужна проверка OnlyPC: заказ #{po_id}\nПокупатель: {chat['name']}\nПрислал {kind}: {text[:80]}\nОткройте Lotus → Аренда Steam → Проверка OnlyPC.")
+            db.log(f"Аренда #{po_id}: {chat['name']} прислал {kind} для проверки OnlyPC — нужна ваша проверка", "order")
+            ctx.reply(chat, cfg["onlypc_wait"])
+            return True
+
     # запомним chat_id для активной аренды этого покупателя
     oid, rent = _active_rental_for(chat["name"], chat["account_id"])
     if rent and rent.get("chat_id") != chat["id"]:
@@ -234,6 +298,9 @@ def on_review(review, ctx):
         return
     if rent.get("review_bonus"):
         return  # бонус за эту аренду уже был
+    min_hours = float(ctx.config.get("review_bonus_min_hours") or 0)
+    if min_hours and rent.get("hours", 0) < min_hours:
+        return  # куплено слишком мало часов — бонус не положен
     rent["review_bonus"] = True
     rent["until"] += 3600
     rent["reminded"] = False
@@ -271,6 +338,32 @@ def on_tick(ctx):
         db.log(f"Продление по аренде #{info['order_id']}: не оплачено за 10 мин, лот выключен")
     if expired:
         _kv_set("pending_extend", pend)
+
+    # OnlyPC: ждём фото — напоминание через 30 мин, прекращение через 60
+    photos = _kv("pending_photo", {})
+    pchanged = False
+    for po_id, job in list(photos.items()):
+        if job.get("got_photo"):
+            continue  # фото пришло, ждём решения владельца — не торопим
+        age = now - job["created"]
+        if not job["reminded"] and age > 30 * 60 and job.get("buyer_id"):
+            try:
+                ctx.send_to_buyer(job["account_id"], job["buyer_id"], cfg["onlypc_ask"])
+                job["reminded"] = True; pchanged = True
+            except Exception:
+                pass
+        elif job["reminded"] and age > 60 * 60:
+            if job.get("buyer_id"):
+                try:
+                    ctx.send_to_buyer(job["account_id"], job["buyer_id"],
+                                      "Фото не получено, заказ не может быть выполнен. Обратитесь к продавцу.")
+                except Exception:
+                    pass
+            notify("attention", f"⏳ OnlyPC: по заказу #{po_id} покупатель {job['buyer']} не прислал фото. Ожидание прекращено, решите вручную.")
+            db.log(f"Аренда #{po_id}: фото OnlyPC не получено за час — ожидание прекращено", "warn")
+            del photos[po_id]; pchanged = True
+    if pchanged:
+        _kv_set("pending_photo", photos)
 
     for oid, rent in list(r.items()):
         if rent["status"] != "active":
@@ -325,7 +418,49 @@ def _reset_account(oid, rent, ctx):
     _update_password(acc["login"], new)
     _mark_account(acc["login"], "free")
     _set_status(oid, "done")
+    _show_lot_back(oid, rent, ctx)
     db.log(f"Аренда #{oid}: пароль {acc['login']} сменён, аккаунт свободен")
+
+
+def onlypc_pending():
+    """Заказы, ожидающие вашего решения по фото OnlyPC."""
+    out = []
+    for po_id, job in _kv("pending_photo", {}).items():
+        out.append({"order_id": po_id, "buyer": job["buyer"], "account_id": job["account_id"],
+                    "got_photo": job.get("got_photo", False), "created": job["created"]})
+    return out
+
+
+def onlypc_decide(order_id, approve, ctx):
+    photos = _kv("pending_photo", {})
+    job = photos.get(order_id)
+    if not job:
+        raise ValueError("Заказ не найден среди ожидающих проверки")
+    del photos[order_id]
+    _kv_set("pending_photo", photos)
+    if approve:
+        return _issue_account(order_id, job["buyer"], job.get("buyer_id"),
+                              job["account_id"], job["hours"], ctx)
+    if job.get("buyer_id"):
+        try:
+            with accounts.use(job["account_id"]) as fp:
+                fp.send_message(fp.chat_with(job["buyer_id"]),
+                                "К сожалению, проверка не пройдена, аккаунт не выдан. Обратитесь к продавцу.")
+        except Exception:
+            pass
+    db.log(f"Аренда #{order_id}: проверка OnlyPC отклонена владельцем", "warn")
+    return "Отклонено"
+
+
+def _show_lot_back(oid, rent, ctx):
+    if not ctx.config.get("hide_lot_on_rent", True):
+        return
+    offer = rent.get("offer_id")
+    if offer:
+        try:
+            ctx.set_lot_active(rent["account_id"], offer, True)
+        except Exception as e:
+            ctx.log(f"не удалось вернуть лот {offer}: {e}", "warn")
 
 
 # ---------------- операции с аккаунтами (шифрование) ----------------

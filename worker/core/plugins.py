@@ -382,7 +382,7 @@ def _finish(task_id, status, result=None, error=None, next_try=0):
 def _alert(ctx, order, reason):
     notify("attention", f"🔴 Нужна проверка: заказ #{order['id']} ({order.get('account', '')})\n"
                         f"{ctx.name}: {reason}\nПокупатель: {order.get('buyer')}, {order.get('amount')} {order.get('currency')}\n"
-                        f"Откройте Kassa → Плагины.")
+                        f"Откройте Lotus → Плагины.")
 
 
 def _process(task):

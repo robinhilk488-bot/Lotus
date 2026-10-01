@@ -142,6 +142,15 @@ class SteamSession:
             self.s.cookies.set("sessionid", self.sessionid, domain=domain)
         return self.steamid
 
+    def logout_everywhere(self):
+        """Завершает все сессии аккаунта (как «выйти на всех устройствах»). Пароль не меняется."""
+        # нужен access_token для веб-API; у community-сессии он в cookie steamLoginSecure,
+        # поэтому используем страницу управления устройствами.
+        r = self.s.post("https://store.steampowered.com/twofactor/manage_action", timeout=20,
+                        data={"action": "deauthorize", "sessionid": self.sessionid})
+        if r.status_code != 200:
+            raise SteamError(f"Steam не завершил сессии (код {r.status_code})")
+
     # ---------------- смена пароля (мастер help.steampowered.com) ----------------
     def _help(self, path, data, get=False):
         data = {**data, "sessionid": self.sessionid, "wizard_ajax": 1, "gamepad": 0}
@@ -192,6 +201,13 @@ class SteamSession:
 
 def check_login(login, password, shared_secret):
     SteamSession().login(login, password, shared_secret)
+
+
+def logout_everywhere(login, password, shared_secret):
+    """Входит в аккаунт и завершает все его сессии, не меняя пароль."""
+    sess = SteamSession()
+    sess.login(login, password, shared_secret)
+    sess.logout_everywhere()
 
 
 def change_password(login, old, new, shared_secret):
