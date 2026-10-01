@@ -1,7 +1,10 @@
-"""Lotus — приложение для ПК.
+"""Lotus — приложение для ПК (на PySide6 / QtWebEngine).
 
-Окно рисуется на HTML/CSS (папка ui/), а все запросы к воркеру идут через Python:
-так проверяется отпечаток сертификата сервера и токен не светится в браузерном коде.
+Движок Chromium встроен в программу (QtWebEngine), поэтому ничего ставить не нужно
+и ввод текста работает всегда. Интерфейс — HTML/CSS/JS из папки ui/.
+
+Мостик к Python сделан через QWebChannel, но в страницу добавлен слой совместимости,
+поэтому JS по-прежнему вызывает window.pywebview.api.* — файлы ui/ менять не нужно.
 """
 import base64
 import json
@@ -12,21 +15,25 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 import urllib3
-import webview
 from requests.adapters import HTTPAdapter
 
-# Проверку сертификата делаем сами — по отпечатку из ссылки (см. PinnedAdapter).
+from PySide6.QtCore import QFile, QIODevice, QObject, Qt, Slot
+from PySide6.QtGui import QIcon
+from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import QWebEngineProfile
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWidgets import QApplication, QMainWindow
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-# Команда установки сервера. При сборке через GitHub Actions подставляется автоматически.
 INSTALL_REPO = "robinhilk488-bot/Lotus"
 CONFIG_DIR = Path.home() / ".kassa"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
 class PinnedAdapter(HTTPAdapter):
-    """Принимает только сертификат с заранее известным отпечатком SHA-256 (из ссылки подключения)."""
+    """Принимает только сертификат с известным отпечатком SHA-256 (из ключа подключения)."""
 
     def __init__(self, fingerprint, **kw):
         self.fingerprint = fingerprint
@@ -54,9 +61,8 @@ BAD_KEY = "Это не ключ подключения. Скопируйте ц�
 
 
 def parse_link(link: str) -> dict:
-    """Принимает ключ подключения lotus_… (его выдаёт установщик) или старую ссылку kassa://…"""
     link = "".join(link.split())
-    if link.startswith(("lotus_", "kassa_")):  # kassa_ — старые ключи, тоже принимаем
+    if link.startswith(("lotus_", "kassa_")):
         try:
             raw = link.split("_", 1)[1]
             raw += "=" * (-len(raw) % 4)
@@ -75,52 +81,60 @@ def parse_link(link: str) -> dict:
             "fp": q["fp"][0].replace(":", "").lower(), "link": link}
 
 
-class Api:
-    """Эти методы доступны из JS как window.pywebview.api.*"""
+class Api(QObject):
+    """Методы доступны из JS как window.pywebview.api.* (через слой совместимости)."""
 
     def __init__(self):
+        super().__init__()
         self.conn = None
         self.session = None
 
+    @Slot(result=str)
     def install_command(self):
         raw = f"https://raw.githubusercontent.com/{INSTALL_REPO}/main/install.sh"
-        return f"KASSA_REPO=https://github.com/{INSTALL_REPO}.git bash <(curl -s {raw})"
+        return json.dumps(f"KASSA_REPO=https://github.com/{INSTALL_REPO}.git bash <(curl -s {raw})")
 
-    # --- сохранённое подключение ---
+    @Slot(result=str)
     def load_saved(self):
         try:
-            return json.loads(CONFIG_FILE.read_text("utf-8"))
+            return json.dumps(json.loads(CONFIG_FILE.read_text("utf-8")))
         except Exception:
-            return None
+            return json.dumps(None)
 
     def _save(self, data):
         CONFIG_DIR.mkdir(exist_ok=True)
         CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
 
+    @Slot(result=str)
     def forget(self):
         self.conn = self.session = None
         CONFIG_FILE.unlink(missing_ok=True)
-        return True
+        return json.dumps(True)
 
-    # --- подключение ---
-    def connect(self, link: str):
+    @Slot(str, result=str)
+    def connect(self, link):
         try:
             conn = parse_link(link)
         except ValueError as e:
-            return {"error": str(e)}
+            return json.dumps({"error": str(e)})
         s = requests.Session()
-        s.verify = False  # цепочку CA не проверяем: вместо неё сверяется отпечаток сертификата
+        s.verify = False
         s.mount("https://", PinnedAdapter(conn["fp"]))
         s.headers["Authorization"] = f"Bearer {conn['token']}"
         self.conn, self.session = conn, s
-        res = self.request("GET", "/api/status")
+        res = self._request("GET", "/api/status")
         if "error" in res:
             self.conn = self.session = None
-            return res
+            return json.dumps(res)
         self._save({"link": conn["link"]})
-        return {"ok": True, "host": conn["host"], "port": conn["port"], "status": res}
+        return json.dumps({"ok": True, "host": conn["host"], "port": conn["port"], "status": res})
 
-    def request(self, method, path, body=None):
+    @Slot(str, str, str, result=str)
+    def request(self, method, path, body_json):
+        body = json.loads(body_json) if body_json else None
+        return json.dumps(self._request(method, path, body))
+
+    def _request(self, method, path, body=None):
         if not self.session:
             return {"error": "Нет подключения к серверу"}
         url = f"https://{self.conn['host']}:{self.conn['port']}{path}"
@@ -141,53 +155,67 @@ class Api:
         return data if isinstance(data, dict) else {"data": data}
 
 
-def _webview2_installed() -> bool:
-    """Проверяет, есть ли на Windows компонент Edge WebView2 (нужен для нормального ввода)."""
-    if sys.platform != "win32":
-        return True
-    try:
-        import winreg
-    except Exception:
-        return True
-    paths = [
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
-        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
-        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"),
-    ]
-    for root, path in paths:
-        try:
-            with winreg.OpenKey(root, path) as k:
-                v, _ = winreg.QueryValueEx(k, "pv")
-                if v and v != "0.0.0.0":
-                    return True
-        except OSError:
-            continue
-    return False
+SHIM = """
+new QWebChannel(qt.webChannelTransport, function (channel) {
+    var api = channel.objects.api;
+    function call(name, args) {
+        return new Promise(function (resolve) {
+            var cb = function (res) { resolve(JSON.parse(res)); };
+            api[name].apply(api, (args || []).concat(cb));
+        });
+    }
+    window.pywebview = { api: {
+        install_command: function () { return call("install_command", []); },
+        load_saved:      function () { return call("load_saved", []); },
+        forget:          function () { return call("forget", []); },
+        connect:         function (link) { return call("connect", [link]); },
+        request:         function (m, p, body) { return call("request", [m, p, body ? JSON.stringify(body) : ""]); }
+    }};
+    window.dispatchEvent(new Event("pywebviewready"));
+});
+"""
 
 
-def _ensure_webview2():
-    """Если компонента нет — тихо скачивает и ставит его для текущего пользователя (без прав админа, без окон)."""
-    if sys.platform != "win32" or _webview2_installed():
-        return
-    import subprocess
-    import tempfile
-    import urllib.request
-    try:
-        url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"  # официальный evergreen-бутстраппер Microsoft
-        tmp = Path(tempfile.gettempdir()) / "MicrosoftEdgeWebView2Setup.exe"
-        urllib.request.urlretrieve(url, tmp)
-        # /silent — без окон, установка в профиль пользователя не требует администратора
-        subprocess.run([str(tmp), "/silent", "/install"], timeout=300,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except Exception:
-        pass  # не вышло — не блокируем запуск, приложение попробует стартовать как есть
+def _qwebchannel_js():
+    # сначала локальная копия рядом с приложением (надёжнее всего), затем ресурс Qt
+    local = APP_DIR / "ui" / "qwebchannel.js"
+    if local.exists():
+        return local.read_text("utf-8")
+    f = QFile(":/qtwebchannel/qwebchannel.js")
+    if f.open(QIODevice.ReadOnly):
+        data = bytes(f.readAll().data()).decode("utf-8")
+        f.close()
+        return data
+    return ""
+
+
+class Window(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Lotus")
+        self.resize(1280, 800)
+        self.setMinimumSize(1040, 680)
+        ico = APP_DIR / "kassa.ico"
+        if ico.exists():
+            self.setWindowIcon(QIcon(str(ico)))
+
+        self.view = QWebEngineView()
+        self.setCentralWidget(self.view)
+
+        self.api = Api()
+        self.channel = QWebChannel()
+        self.channel.registerObject("api", self.api)
+        self.view.page().setWebChannel(self.channel)
+
+        boot = _qwebchannel_js() + SHIM
+        self.view.loadFinished.connect(lambda ok: self.view.page().runJavaScript(boot) if ok else None)
+        self.view.setUrl("file:///" + str(APP_DIR / "ui" / "index.html").replace("\\", "/"))
 
 
 if __name__ == "__main__":
-    _ensure_webview2()  # тихо доустановит компонент Windows, если его нет (у большинства он уже есть)
-    webview.create_window(
-        "Lotus", str(APP_DIR / "ui" / "index.html"), js_api=Api(),
-        width=1280, height=800, min_size=(1040, 680), background_color="#0B0710",
-    )
-    # edgechromium (WebView2) — движок из Windows, один лёгкий .exe. Флаги сборки гарантируют корректный ввод.
-    webview.start(gui="edgechromium")
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+    app = QApplication(sys.argv)
+    QWebEngineProfile.defaultProfile()
+    win = Window()
+    win.show()
+    sys.exit(app.exec())
