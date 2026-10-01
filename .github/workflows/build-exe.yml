@@ -28,15 +28,13 @@ jobs:
       - name: Установить зависимости
         run: pip install -r client/requirements.txt pyinstaller
 
-      - name: Собрать exe (один файл)
+      - name: Собрать exe (один файл, движок внутри)
         working-directory: client
         run: >
           pyinstaller --noconfirm --noconsole --onefile --name Lotus --icon kassa.ico
           --add-data "ui;ui"
-          --collect-all webview
-          --collect-all clr_loader
-          --collect-all pythonnet
-          --hidden-import clr
+          --collect-all PySide6
+          --collect-all shiboken6
           main.py
 
       - name: Выложить в релиз
@@ -44,6 +42,6 @@ jobs:
         with:
           tag_name: latest
           name: Последняя версия
-          body: Скачайте Lotus.exe и запустите. Один файл, ничего больше ставить не нужно.
+          body: Скачайте Lotus.exe и запустите. Один файл, движок внутри — ничего ставить не нужно.
           files: client/dist/Lotus.exe
           make_latest: true
