@@ -66,7 +66,7 @@ pre {
 .btn:disabled { opacity: .55; cursor: default; }
 
 input, textarea, select {
-  -webkit-user-select: text; user-select: text;
+  -webkit-user-select: text; user-select: text; pointer-events: auto; -webkit-app-region: no-drag;
   width: 100%; font: 14px var(--ui); color: var(--text); background: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 12px; resize: vertical;
 }
