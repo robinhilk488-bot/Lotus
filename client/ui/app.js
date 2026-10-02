@@ -389,9 +389,10 @@ async function openPluginConfig(id) {
       <div class="cfg-title" id="cfg-title"></div></div>
       <div class="cfg-body" id="cfg-body"></div></div>`;
   document.body.append(host);
-  const close = () => { host.remove(); document.onkeydown = null; go("plugins"); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  const close = () => { document.removeEventListener("keydown", onKey); host.remove(); go("plugins"); };
   host.querySelector(".cfg-back").onclick = close;
-  document.onkeydown = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
   host.onmousedown = e => { if (e.target === host) close(); };
   const body = host.querySelector("#cfg-body");
   const titleEl = host.querySelector("#cfg-title");
@@ -1057,10 +1058,12 @@ function modal(html, okText, onOk) {
     <p class="error" hidden></p>
     <div class="modal-actions"><button type="button" class="btn ghost" data-close>Отмена</button><button class="btn primary">${okText}</button></div></form></div>`;
   const form = $("form", root), err = $(".error", form), ok = $(".btn.primary", form);
-  const close = () => (root.innerHTML = "");
+  const onKey = e => { if (e.key === "Escape") close(); };
+  const close = () => { document.removeEventListener("keydown", onKey); root.innerHTML = ""; };
   $("[data-close]", form).onclick = close;
   $(".overlay", root).onmousedown = e => e.target.classList.contains("overlay") && close();
-  document.onkeydown = e => e.key === "Escape" && close();
+  // Escape слушаем точечно и только на всплытии, чтобы не перехватывать ввод в полях (важно для QtWebEngine)
+  document.addEventListener("keydown", onKey);
   form.onsubmit = async e => {
     e.preventDefault();
     ok.disabled = true; err.hidden = true;
@@ -1068,7 +1071,11 @@ function modal(html, okText, onOk) {
     catch (x) { err.textContent = x.message; err.hidden = false; }
     finally { ok.disabled = false; }
   };
-  setTimeout(() => $("input, textarea", form)?.focus(), 30);
+  // фокус в первое поле после отрисовки окна: клик мышью + focus, иначе QtWebEngine не отдаёт ввод
+  requestAnimationFrame(() => {
+    const first = $("input, textarea", form);
+    if (first) { first.focus(); first.click(); }
+  });
 }
 
 let resizeT;
