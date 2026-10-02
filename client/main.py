@@ -8,6 +8,7 @@
 """
 import base64
 import json
+import os
 import ssl
 import sys
 from pathlib import Path
@@ -25,6 +26,10 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Флаги движка Chromium: лечат ввод с клавиатуры в собранном .exe на части машин.
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
+                      "--disable-gpu --disable-gpu-compositing --no-sandbox")
 
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 INSTALL_REPO = "robinhilk488-bot/Lotus"
@@ -200,6 +205,7 @@ class Window(QMainWindow):
             self.setWindowIcon(QIcon(str(ico)))
 
         self.view = QWebEngineView()
+        self.view.setFocusPolicy(Qt.StrongFocus)
         self.setCentralWidget(self.view)
 
         self.api = Api()
@@ -208,7 +214,13 @@ class Window(QMainWindow):
         self.view.page().setWebChannel(self.channel)
 
         boot = _qwebchannel_js() + SHIM
-        self.view.loadFinished.connect(lambda ok: self.view.page().runJavaScript(boot) if ok else None)
+
+        def _on_loaded(ok):
+            if ok:
+                self.view.page().runJavaScript(boot)
+                self.view.setFocus()  # отдаём фокус странице, иначе не принимается ввод
+
+        self.view.loadFinished.connect(_on_loaded)
         self.view.setUrl("file:///" + str(APP_DIR / "ui" / "index.html").replace("\\", "/"))
 
 
@@ -218,4 +230,6 @@ if __name__ == "__main__":
     QWebEngineProfile.defaultProfile()
     win = Window()
     win.show()
+    win.raise_()
+    win.activateWindow()
     sys.exit(app.exec())
