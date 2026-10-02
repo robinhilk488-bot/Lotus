@@ -1083,3 +1083,27 @@ window.addEventListener("resize", () => {
 });
 if (window.pywebview) boot(); else window.addEventListener("pywebviewready", boot);
 setTimeout(() => { if (!window.pywebview && $("#app").hidden && $("#connect").hidden) boot(); }, 400);
+
+
+// Надёжный фокус ввода на QtWebEngine: при клике/касании по полю принудительно
+// возвращаем ему фокус, чтобы клавиатура всегда печатала туда, куда нажали.
+(function () {
+  function grab(e) {
+    const el = e.target.closest("input, textarea, select");
+    if (!el) return;
+    if (window.focus) window.focus();
+    if (document.activeElement !== el) {
+      el.focus({ preventScroll: true });
+      // повтор на следующем кадре — если фокус «проскочил» мимо, вернуть его
+      requestAnimationFrame(() => { if (document.activeElement !== el) el.focus({ preventScroll: true }); });
+    }
+  }
+  document.addEventListener("mousedown", grab, true);
+  document.addEventListener("click", grab, true);
+  document.addEventListener("touchstart", grab, true);
+  // когда окно снова получает фокус — вернуть его последнему полю
+  window.addEventListener("focus", () => {
+    const el = document.activeElement;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) el.focus({ preventScroll: true });
+  });
+})();
