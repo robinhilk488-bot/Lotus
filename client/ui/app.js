@@ -273,9 +273,7 @@ pages.accounts = async root => {
       <p class="muted">golden_key хранится на сервере в зашифрованном виде и в приложение не возвращается.</p>
       <label class="field"><span>Название (необязательно)</span><input name="name" placeholder="Например, Основной"></label>
       <label class="field"><span>golden_key</span><input name="golden_key" placeholder="32 символа из cookie funpay.com" autocomplete="off"></label>
-      <details class="howto"><summary>Как получить golden_key</summary><ol>
-        <li>Войдите на funpay.com в браузере.</li><li>Нажмите F12 → Application → Cookies → funpay.com.</li>
-        <li>Скопируйте значение golden_key.</li></ol></details>`,
+      <p class="hint" style="margin-top:-6px">Как получить: войдите на funpay.com → F12 → Application → Cookies → funpay.com → скопируйте значение golden_key.</p>`,
     "Добавить", async f => {
       await api("POST", "/api/accounts", { name: f.name.value, golden_key: f.golden_key.value });
       toast("Аккаунт добавлен. Продажи подтянутся в течение минуты.");
