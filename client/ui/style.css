@@ -372,3 +372,10 @@ td .switch { display: inline-block; }
 .cfg-aside { display: flex; flex-direction: column; gap: 16px; }
 .btn.wide { width: 100%; text-align: center; }
 @media (max-width: 900px) { .cfg-cols { grid-template-columns: 1fr; } .cfg-screen { padding: 16px 18px 40px; } }
+
+/* ---------- блок «Как получить …» в модалках ---------- */
+.howto { margin-top: 6px; color: var(--muted); font-size: 13px; clear: both; }
+.howto summary { cursor: pointer; color: var(--text); font-weight: 600; list-style: revert; }
+.howto ol { padding-left: 18px; margin: 8px 0 0; }
+.howto li { margin-bottom: 6px; }
+.howto code, .howto pre { color: var(--gold); }
