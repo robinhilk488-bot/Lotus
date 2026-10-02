@@ -104,9 +104,12 @@ def poll_account(acc):
         if init_max is None:  # первый запуск: запоминаем текущее состояние, ничего не обрабатываем
             init_max = max([c["last_msg_id"] for c in chats] or [0])
             _kv_set(init_key, init_max)
-            for c in chats:
+            # FunPay отдаёт чаты в порядке свежести (новые первыми). Сохраняем этот порядок,
+            # проставляя убывающее время, чтобы в приложении новые были сверху.
+            now = time.time()
+            for i, c in enumerate(chats):
                 db.execute("INSERT OR REPLACE INTO chats(account_id, chat_id, name, last_msg_id, last_text, last_ts, unread, greeted) "
-                           "VALUES(?,?,?,?,?,?,?,1)", (acc["id"], c["id"], c["name"], c["last_msg_id"], c["last_text"], time.time(), int(c["unread"])))
+                           "VALUES(?,?,?,?,?,?,?,1)", (acc["id"], c["id"], c["name"], c["last_msg_id"], c["last_text"], now - i, int(c["unread"])))
             return
         for c in chats:
             row = (db.query("SELECT * FROM chats WHERE account_id=? AND chat_id=?", (acc["id"], c["id"])) or [None])[0]
