@@ -379,3 +379,7 @@ td .switch { display: inline-block; }
 .howto ol { padding-left: 18px; margin: 8px 0 0; }
 .howto li { margin-bottom: 6px; }
 .howto code, .howto pre { color: var(--gold); }
+
+/* поля ввода всегда поверх соседних блоков и кликабельны (фикс для QtWebEngine) */
+.modal input, .modal textarea, .modal select { position: relative; z-index: 2; }
+.modal .hint, .modal p { position: relative; z-index: 0; pointer-events: none; }
