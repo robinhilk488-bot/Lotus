@@ -152,9 +152,12 @@ async function go(page) {
   state.page = page;
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("active", a.dataset.page === page));
   const root = $("#page");
+  root.classList.remove("page-in");
   root.innerHTML = "";
   try { await pages[page](root); }
   catch (e) { root.innerHTML = `<div class="panel empty"><h2>Не удалось загрузить раздел</h2><p class="muted">${esc(e.message)}</p><button class="btn" onclick="go('${page}')">Повторить</button></div>`; }
+  // мягкое появление контента раздела
+  requestAnimationFrame(() => root.classList.add("page-in"));
 }
 
 // ---------- график ----------
