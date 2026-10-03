@@ -334,7 +334,7 @@ pages.sales = async root => {
 };
 
 // ---------- Плагины ----------
-let pluginFilter = "all";
+let pluginFilter = "working";
 
 // ---------- полноэкранное окно настройки плагина ----------
 let _rentReopen = null;
@@ -472,7 +472,13 @@ async function openPluginConfig(id) {
 
 pages.plugins = async root => {
   const [list, tasks] = await Promise.all([api("GET", "/api/plugins"), api("GET", "/api/tasks?limit=60")]);
-  const shown = list.filter(p => pluginFilter === "all" || (pluginFilter === "on" ? p.enabled : p.ready));
+  // статус плагина: enabled | working (готов, настроен) | broken (готов, но не настроен) | soon (в разработке)
+  const statusOf = p => !p.ready ? "soon" : p.enabled ? "enabled" : "working";
+  const counts = { enabled: 0, working: 0, soon: 0 };
+  list.forEach(p => counts[statusOf(p)]++);
+  const FILTERS = [["enabled", "Включённые"], ["working", "Рабочие"], ["soon", "В разработке"]];
+  const enabledList = list.filter(p => statusOf(p) === "enabled");
+  const shown = list.filter(p => statusOf(p) === pluginFilter);
   const groups = [];
   shown.forEach(p => { let g = groups.find(x => x[0] === p.category); if (!g) groups.push(g = [p.category, []]); g[1].push(p); });
   const attention = tasks.filter(t => t.status === "attention");
@@ -482,7 +488,7 @@ pages.plugins = async root => {
 
   root.innerHTML = `
     <div class="page-head"><h1>Плагины</h1>
-      <div class="seg">${[["all", "Все"], ["on", "Включены"], ["ready", "Готовы к работе"]].map(([k, t]) => `<button data-f="${k}" class="${pluginFilter === k ? "on" : ""}">${t}</button>`).join("")}</div></div>
+      <div class="seg">${FILTERS.map(([k, t]) => `<button data-f="${k}" class="${pluginFilter === k ? "on" : ""}">${t}${counts[k] ? ` <span class="seg-count">${counts[k]}</span>` : ""}</button>`).join("")}</div></div>
 
     ${noSub ? `<a class="banner" onclick="go('subscription')"><b>Подписка неактивна.</b> Плагины не принимают новые заказы. Откройте раздел «Подписка», чтобы активировать код.</a>` : ""}
     ${attention.length ? `<section class="panel alert" style="margin-bottom:16px">
@@ -520,7 +526,7 @@ pages.plugins = async root => {
         </div>
         <div></div>
         <label class="switch" title="Плагин ещё в разработке"><input type="checkbox" disabled><i></i></label>
-      </section>`).join("")}</div>`).join("") || `<div class="panel empty"><h2>${pluginFilter === "on" ? "Ни один плагин не включён" : "Готовых плагинов нет"}</h2><p class="muted">Переключите фильтр на «Все», чтобы увидеть весь каталог.</p></div>`}
+      </section>`).join("")}</div>`).join("") || `<div class="panel empty"><h2>${pluginFilter === "enabled" ? "Ни один плагин не включён" : pluginFilter === "soon" ? "Нет плагинов в разработке" : "Нет готовых плагинов"}</h2><p class="muted">${pluginFilter === "enabled" ? "Включите плагин во вкладке «Рабочие» — он появится здесь." : "Переключите вкладку выше."}</p></div>`}
 
     <section class="panel" style="margin-top:16px">
       <div class="panel-head"><h2>Заказы в работе у плагинов</h2><span class="muted small">последние ${tasks.length}</span></div>
@@ -914,8 +920,16 @@ pages.replies = async root => {
 pages.subscription = async root => {
   const sub = await api("GET", "/api/subscription");
   const fmt = ts => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }).replace(/ г\.$/, "");
-  const LOTS = state.subLots || (state.demo ? { 1: "https://funpay.com/lots/offer?id=1", 3: "https://funpay.com/lots/offer?id=3", 6: "https://funpay.com/lots/offer?id=6", 12: "https://funpay.com/lots/offer?id=12" } : {});  // ссылки на лоты задаёшь ты, см. ниже
-  const plans = [[1, "1 месяц", 349], [3, "3 месяца", 899], [6, "6 месяцев", 1690], [12, "12 месяцев", 2990]];
+  // Ссылки на твои лоты подписки на FunPay. Вписывай номер лота после offer?id=.
+  const LOTS = state.demo
+    ? { 1: "https://funpay.com/lots/offer?id=1", 3: "https://funpay.com/lots/offer?id=3", 6: "https://funpay.com/lots/offer?id=6", 12: "https://funpay.com/lots/offer?id=12" }
+    : {
+        1: "https://funpay.com/lots/offer?id=78601415",
+        3: "https://funpay.com/lots/offer?id=78601674",
+        6: "https://funpay.com/lots/offer?id=78601812",
+        12: "https://funpay.com/lots/offer?id=78601900",
+      };
+  const plans = [[1, "1 месяц", "349.99"], [3, "3 месяца", "899.99"], [6, "6 месяцев", "1699.99"], [12, "12 месяцев", "2990.99"]];
 
   if (!sub.configured) {
     root.innerHTML = `<div class="page-head"><h1>Подписка</h1></div>
@@ -977,7 +991,7 @@ function plural(n, one, few, many) {
 
 // ---------- Настройки ----------
 pages.settings = async root => {
-  const [s, st, raised] = await Promise.all([api("GET", "/api/settings"), api("GET", "/api/status"), api("GET", "/api/raise")]);
+  const [s, st, raised, backups] = await Promise.all([api("GET", "/api/settings"), api("GET", "/api/status"), api("GET", "/api/raise"), api("GET", "/api/backups").catch(() => [])]);
   const tgEvents = [["tg_on_attention", "Заказ требует проверки"], ["tg_on_help", "Покупатель вызвал продавца"], ["tg_on_account", "Аккаунт FunPay перестал работать"],
                     ["tg_on_stock", "Закончился товар автовыдачи"], ["tg_on_review", "Новый отзыв"], ["tg_on_blacklist", "Заказ от покупателя из чёрного списка"], ["tg_on_order", "Каждый новый заказ"]];
   root.innerHTML = `
@@ -1025,13 +1039,20 @@ pages.settings = async root => {
         <button class="btn primary save">Сохранить</button>
       </section>
 
+      <section class="panel" id="sec-backup">
+        <h2 style="margin-bottom:6px">Резервные копии</h2>
+        <p class="muted" style="margin:0 0 14px">Сервер сам делает копию базы раз в сутки (аккаунты, продажи, аренда, настройки). Хранятся последние 14 копий. Ключ шифрования в копии не содержится.</p>
+        ${backups.length ? `<div class="raise-log" style="max-height:200px;overflow:auto">${backups.map(bk => `<div><b>${esc(bk.name)}</b> <span class="muted">· ${(bk.size/1024).toFixed(0)} КБ · ${ago(bk.ts)}</span></div>`).join("")}</div>` : `<p class="muted small">Копий пока нет — первая создаётся автоматически вскоре после запуска сервера.</p>`}
+        <button class="btn" id="backup-now" style="margin-top:4px">Сделать копию сейчас</button>
+      </section>
+
       <section class="panel"><h2 style="margin-bottom:14px">Подключение</h2>
         <div class="row" style="border-top:0"><div><div>${esc(state.server)}</div><p>Версия сервера ${esc(st.version)}, работает ${Math.floor(st.uptime / 3600)} ч ${Math.floor(st.uptime % 3600 / 60)} мин</p></div>
           <button class="btn" id="logout">${state.demo ? "Выйти из демо" : "Отключиться"}</button></div>
       </section>
     </div>`;
 
-  root.querySelectorAll("section[id^=sec-]").forEach(sec => ($(".save", sec).onclick = () => saveSection(sec)));
+  root.querySelectorAll("section[id^=sec-]").forEach(sec => { const b = $(".save", sec); if (b) b.onclick = () => saveSection(sec); });
   $("#tg-test").onclick = async e => {
     const sec = $("#sec-tg");
     if (!(await saveSection(sec))) return;
@@ -1044,6 +1065,12 @@ pages.settings = async root => {
     e.target.disabled = true; e.target.textContent = "Поднимаю…";
     try { const r = await api("POST", "/api/raise"); toast(Object.entries(r).map(([a, rep]) => `${a}: ${rep.join("; ")}`).join("\n") || "Нет работающих аккаунтов"); go("settings"); }
     catch (err) { toast(err.message, true); e.target.disabled = false; e.target.textContent = "Поднять сейчас"; }
+  };
+  const bk = $("#backup-now");
+  if (bk) bk.onclick = async e => {
+    e.target.disabled = true; e.target.textContent = "Создаю…";
+    try { const r = await api("POST", "/api/backups"); toast("Копия создана: " + r.name); go("settings"); }
+    catch (err) { toast(err.message, true); e.target.disabled = false; e.target.textContent = "Сделать копию сейчас"; }
   };
   $("#logout").onclick = async () => {
     clearInterval(state.timer);
