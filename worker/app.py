@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 
-from core import accounts, chat, db, notify, plugins, raiser, subscription, sync
+from core import accounts, backup, chat, db, notify, plugins, raiser, subscription, sync
 from core.crypto import encrypt
 from core.funpay import FunPayAccount, FunPayError
 
@@ -575,6 +575,21 @@ def subscription_activate():
     return jsonify(st)
 
 
+# ---------- резервные копии ----------
+@app.get("/api/backups")
+def backups_list():
+    return jsonify(backup.list_backups())
+
+
+@app.post("/api/backups")
+def backups_make():
+    try:
+        path = backup.make_backup()
+    except Exception as e:
+        return err(f"Не удалось создать копию: {e}", 500)
+    return jsonify(ok=True, name=path.split("/")[-1])
+
+
 # ---------- журнал ----------
 @app.get("/api/events")
 def events():
@@ -588,4 +603,5 @@ subscription.start()
 sync.start()
 chat.start()
 raiser.start()
+backup.start()
 db.log(f"Воркер запущен, версия {VERSION}")
