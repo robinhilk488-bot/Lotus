@@ -223,7 +223,8 @@ def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx, acc_type=N
             ctx.set_lot_active(account_id, acc["offer_id"], False)
         except Exception as e:
             ctx.log(f"не удалось скрыть лот {acc['offer_id']}: {e}", "warn")
-    db.log(f"Аренда #{order_id}: выдан {acc['login']} на {hours} ч (до {_hm(until)})", "order")
+    _nm = f"{acc.get('title')} ({acc['login']})" if acc.get("title") else acc["login"]
+    db.log(f"Аренда #{order_id}: выдан {_nm} на {hours} ч (до {_hm(until)})", "order")
     return f"Аренда до {_hm(until)}"
 
 
