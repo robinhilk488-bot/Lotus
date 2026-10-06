@@ -258,7 +258,8 @@ const Demo = (() => {
         const c = chats.find(x => x.chat_id === id);
         if (method === "POST") { list.push({ id: list.length + 1, author_id: 777, text: body.text, ts: Date.now() / 1000, mine: 1 }); if (c) { c.last_text = body.text; c.last_ts = Date.now() / 1000; } }
         if (c) c.unread = 0;
-        return { messages: list, warning: null };
+        const ord = orders.find(o => o.buyer === (c && c.name));
+        return { messages: list, warning: null, order: ord ? { order_id: ord.id, lot: ord.description } : null };
       }
       if (p.startsWith("/api/offline/accounts")) {
         offlineAccs ||= [{login:"cs2_offline_01",has_mafile:true},{login:"dota_offline_02",has_mafile:true}];
