@@ -779,7 +779,7 @@ async function renderRentInto(root) {
     ${accs.length ? `<section class="panel" style="margin-top:16px"><div class="table-wrap"><table>
       <thead><tr><th>Логин</th><th>Пароль</th><th>maFile</th><th>Статус</th><th>Арендатор</th><th></th><th></th></tr></thead>
       <tbody>${accs.map(a => `<tr>
-        <td><b>${esc(a.login)}</b></td>
+        <td>${a.title ? `<div class="acc-title">${esc(a.title)}</div>` : ""}<b>${esc(a.login)}</b></td>
         <td><span class="pw" data-pw="${esc(a.password)}">••••••••</span> <button class="linkbtn" data-show="${esc(a.login)}">показать</button></td>
         <td>${a.has_mafile ? "есть" : `<span class="warn-text">нет</span>`}</td>
         <td><span class="pill ${statePill(a)}">${stateLabel(a)}</span></td>
@@ -816,7 +816,16 @@ async function renderRentInto(root) {
     b.textContent = shown ? "показать" : "скрыть";
   }));
 
+  // трёхпозиционный переключатель (кнопки — работают в любом WebView, в отличие от <select>)
+  const triField = (name, val) => {
+    const cur = val === true ? "1" : val === false ? "0" : "";
+    const opt = (v, lbl) => `<button type="button" class="seg-btn ${cur === v ? "on" : ""}" data-seg="${name}" data-val="${v}">${lbl}</button>`;
+    return `<input type="hidden" name="${name}" value="${cur}"><div class="seg">${opt("", "Как в общих")}${opt("1", "Включить")}${opt("0", "Выключить")}</div>`;
+  };
+
   const accForm = (a = {}) => `
+    <label class="field"><span>Название аккаунта</span><input name="title" value="${esc(a.title || "")}" placeholder="Например: КС Прайm 2000ч" autocomplete="off">
+      <small class="hint">Понятная подпись для вас — видно в списке аккаунтов и в логах выдачи. Не влияет на выдачу.</small></label>
     <label class="field"><span>Логин Steam</span><input name="login" value="${esc(a.login || "")}" ${a.login ? "readonly" : ""} autocomplete="off"></label>
     <label class="field"><span>Пароль</span><input name="password" type="text" autocomplete="off" placeholder="${a.login ? "Оставьте пустым, чтобы не менять" : ""}"></label>
     <label class="field"><span>maFile (содержимое файла из Steam Desktop Authenticator)</span><textarea name="mafile" rows="4" placeholder='${a.has_mafile ? "maFile загружен. Вставьте новый, чтобы заменить" : '{"shared_secret":"…", "account_name":"…"}'}'></textarea>
@@ -827,21 +836,15 @@ async function renderRentInto(root) {
       <small class="hint" style="margin-bottom:10px;display:block">Пусто / «как в общих» — берётся значение из блока «Тексты и лот продления». Заполните, чтобы переопределить для этого аккаунта.</small>
       <label class="field"><span>Свой ID лота продления</span><input name="extend_offer_id" value="${esc(a.extend_offer_id || "")}" placeholder="Пусто — общий из настроек">
         <small class="hint">Отдельный лот «Продление» именно для этого аккаунта.</small></label>
-      <label class="field"><span>Проверка OnlyPC (фото из клуба)</span><select name="onlypc_check">
-        <option value="">Как в общих настройках</option>
-        <option value="1" ${a.onlypc_check === true ? "selected" : ""}>Включить</option>
-        <option value="0" ${a.onlypc_check === false ? "selected" : ""}>Выключить</option></select></label>
-      <label class="field"><span>Скрывать лот на время аренды</span><select name="hide_lot_on_rent">
-        <option value="">Как в общих настройках</option>
-        <option value="1" ${a.hide_lot_on_rent === true ? "selected" : ""}>Включить</option>
-        <option value="0" ${a.hide_lot_on_rent === false ? "selected" : ""}>Выключить</option></select></label>
+      <div class="field"><span>Проверка OnlyPC (фото из клуба)</span>${triField("onlypc_check", a.onlypc_check)}</div>
+      <div class="field"><span>Скрывать лот на время аренды</span>${triField("hide_lot_on_rent", a.hide_lot_on_rent)}</div>
       <label class="field"><span>Час за отзыв только если куплено от, часов</span><input name="review_bonus_min_hours" type="number" value="${a.review_bonus_min_hours ?? ""}" placeholder="Пусто — общий из настроек"></label>
     </div>`;
 
   const tri = v => v === "" ? null : v === "1";
   $("#add-acc").onclick = () => modal(`<h2>Новый аккаунт для аренды</h2>${accForm()}`, "Добавить", async f => {
     await api("POST", "/api/rent/accounts", {
-      login: f.login.value, password: f.password.value, mafile: f.mafile.value, offer_id: f.offer_id.value,
+      title: f.title.value, login: f.login.value, password: f.password.value, mafile: f.mafile.value, offer_id: f.offer_id.value,
       extend_offer_id: f.extend_offer_id.value, onlypc_check: tri(f.onlypc_check.value),
       hide_lot_on_rent: tri(f.hide_lot_on_rent.value),
       review_bonus_min_hours: f.review_bonus_min_hours.value === "" ? "" : Number(f.review_bonus_min_hours.value),
@@ -852,6 +855,7 @@ async function renderRentInto(root) {
     const a = accs.find(x => x.login === b.dataset.edit);
     modal(`<h2>Аккаунт ${esc(a.login)}</h2>${accForm(a)}`, "Сохранить", async f => {
       const body = {};
+      body.title = f.title.value;
       if (f.password.value.trim()) body.password = f.password.value.trim();
       if (f.mafile.value.trim()) body.mafile = f.mafile.value.trim();
       body.offer_id = f.offer_id.value;
@@ -1132,6 +1136,14 @@ function modal(html, okText, onOk) {
   const close = () => { document.removeEventListener("keydown", onKey); root.innerHTML = ""; };
   $("[data-close]", form).onclick = close;
   $(".overlay", root).onmousedown = e => e.target.classList.contains("overlay") && close();
+  // сегментные переключатели (триполя): клик по кнопке — выбор значения в скрытое поле
+  form.querySelectorAll(".seg-btn").forEach(btn => btn.onclick = () => {
+    const name = btn.dataset.seg;
+    form.querySelectorAll(`.seg-btn[data-seg="${name}"]`).forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    const hidden = form.querySelector(`input[name="${name}"]`);
+    if (hidden) hidden.value = btn.dataset.val;
+  });
   // Escape слушаем точечно и только на всплытии, чтобы не перехватывать ввод в полях (важно для QtWebEngine)
   document.addEventListener("keydown", onKey);
   form.onsubmit = async e => {
