@@ -43,8 +43,10 @@ const Demo = (() => {
       description: "Сдаёт Steam-аккаунты в аренду: выдача, коды Guard, продление отдельным лотом, смена пароля после аренды.",
       settings: [{key:"extend_offer_id",label:"ID лота продления на FunPay",type:"text",required:true,hint:"Создайте выключенный лот «Продление», ID из ссылки offer?id=..."},
                  {key:"extend_command",label:"Команда продления",type:"text",default:"!продлить"},
-                 {key:"remind_before_min",label:"Напоминать за, минут",type:"number",default:15}],
-      config: { extend_offer_id: "3910042", extend_command: "!продлить", remind_before_min: 15 }, secrets_set: {}, missing: [], tasks: { done: 64, pending: 0, attention: 0 } },
+                 {key:"remind_before_min",label:"Напоминать за, минут",type:"number",default:15},
+                 {key:"hide_lot_on_rent",label:"Скрывать лот аккаунта на время аренды",type:"bool",default:true,hint:"Если указан ID лота у аккаунта, он прячется на время аренды."},
+                 {key:"onlypc_check",label:"Проверка OnlyPC (фото из клуба)",type:"bool",default:false,hint:"После оплаты бот просит фото из компьютерного клуба и ждёт вашего решения."}],
+      config: { extend_offer_id: "3910042", extend_command: "!продлить", remind_before_min: 15, hide_lot_on_rent: true, onlypc_check: false }, secrets_set: {}, missing: [], tasks: { done: 64, pending: 0, attention: 0 } },
     { id: "autosmm", ready: true, name: "AutoSMM", version: "1.0", category: "Выдача через поставщиков", enabled: false, can_test: true, can_dry_run: true,
       description: "Продажа SMM-услуг через SMM-панели (TwiBoost и совместимые). Код услуги #1-1234 в конце описания лота.",
       settings: [
@@ -138,7 +140,7 @@ const Demo = (() => {
     { order_id: "RENT9002", buyer: "newguy", account_id: 1, got_photo: false, created: now - 1200 },
   ];
   const rentAccounts = [
-    { login: "csgo_rent_01", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788", offer_id: "3910101" },
+    { login: "csgo_rent_01", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788", offer_id: "3910101", extend_offer_id: "3911001", onlypc_check: true, hide_lot_on_rent: null, review_bonus_min_hours: "" },
     { login: "csgo_rent_02", password: "Zt4hNb8Rty", has_mafile: true, enabled: true, state: "free", rented_until: null, rented_by: null, order_id: null },
     { login: "dota_rent_01", password: "Wq1vCx7Uio", has_mafile: false, enabled: true, state: "needs_reset", rented_until: null, rented_by: null, order_id: null },
     { login: "csgo_rent_03", password: "Mn5jDk3Poi", has_mafile: true, enabled: false, state: "free", rented_until: null, rented_by: null, order_id: null },
