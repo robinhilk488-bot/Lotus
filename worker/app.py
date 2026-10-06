@@ -276,6 +276,19 @@ def _messages(aid, cid):
     return db.query("SELECT * FROM messages WHERE account_id=? AND chat_id=? ORDER BY id DESC LIMIT 150", (aid, cid))[::-1]
 
 
+def _buyer_lot(aid, cid):
+    """Последний заказ покупателя из этого чата — его название лота и номер заказа."""
+    row = db.query("SELECT name FROM chats WHERE account_id=? AND chat_id=?", (aid, cid))
+    if not row or not row[0]["name"]:
+        return None
+    buyer = row[0]["name"]
+    o = db.query("SELECT id, description, ts FROM orders WHERE account_id=? AND buyer=? ORDER BY ts DESC LIMIT 1",
+                 (aid, buyer))
+    if not o:
+        return None
+    return {"order_id": o[0]["id"], "lot": (o[0]["description"] or "").strip()}
+
+
 @app.get("/api/chats/<int:aid>/<cid>")
 def chat_messages(aid, cid):
     warning = None
@@ -284,7 +297,7 @@ def chat_messages(aid, cid):
     except Exception as e:
         warning = f"Показаны сохранённые сообщения: {e}"
     db.execute("UPDATE chats SET unread=0 WHERE account_id=? AND chat_id=?", (aid, cid))
-    return jsonify(messages=_messages(aid, cid), warning=warning)
+    return jsonify(messages=_messages(aid, cid), warning=warning, order=_buyer_lot(aid, cid))
 
 
 @app.post("/api/chats/<int:aid>/<cid>")
