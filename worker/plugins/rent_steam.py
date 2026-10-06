@@ -127,6 +127,13 @@ def _type_for_order(order, cfg):
     return best[1] if best else None
 
 
+def _acc_opt(acc, key, cfg, default=None):
+    """Индивидуальная настройка аккаунта; если у аккаунта не задана — берём общую из настроек плагина."""
+    if acc and key in acc and acc[key] not in (None, ""):
+        return acc[key]
+    return cfg.get(key, default)
+
+
 def _free_account(acc_type=None):
     busy = {r["steam_login"] for r in rentals().values() if r["status"] in ("active", "changing")}
     for a in steam_accounts():
@@ -157,11 +164,13 @@ def on_new_order(order, ctx):
 
     if ctx.dry_run:
         ctx.log(f"Пробный запуск: выдал бы свободный аккаунт{(' типа ' + acc_type) if acc_type else ''} на {hours} ч"
-                + (" (с проверкой OnlyPC)" if cfg.get("onlypc_check") and not _in_whitelist(order.get("buyer_id"), cfg) else ""))
+                + (" (с проверкой OnlyPC)" if _acc_opt(_free_account(acc_type), "onlypc_check", cfg, False) and not _in_whitelist(order.get("buyer_id"), cfg) else ""))
         return "dry-run"
 
-    # OnlyPC: если включено и покупатель НЕ в белом списке — не выдаём, просим фото
-    if cfg.get("onlypc_check") and not _in_whitelist(order.get("buyer_id"), cfg):
+    # OnlyPC по аккаунту: смотрим на аккаунт, который будет выдан (той же категории)
+    _cand = _free_account(acc_type)
+    _onlypc = _acc_opt(_cand, "onlypc_check", cfg, False)
+    if _onlypc and not _in_whitelist(order.get("buyer_id"), cfg):
         p = _kv("pending_photo", {})
         p[order["id"]] = {"buyer": order["buyer"], "buyer_id": order.get("buyer_id"),
                           "account_id": order["account_id"], "hours": hours, "acc_type": acc_type,
@@ -206,9 +215,10 @@ def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx, acc_type=N
         "account_id": account_id, "chat_id": None, "steam_login": acc["login"],
         "until": until, "hours": hours, "reminded": False, "review_bonus": False, "started": time.time(),
         "offer_id": acc.get("offer_id", ""),
+        "extend_offer_id": _acc_opt(acc, "extend_offer_id", ctx.config, ""),
     }
     save_rentals(r)
-    if ctx.config.get("hide_lot_on_rent", True) and acc.get("offer_id"):
+    if _acc_opt(acc, "hide_lot_on_rent", ctx.config, True) and acc.get("offer_id"):
         try:
             ctx.set_lot_active(account_id, acc["offer_id"], False)
         except Exception as e:
@@ -229,7 +239,7 @@ def _apply_extension(order, ctx, pend, key):
     rent["reminded"] = False
     save_rentals(r)
     try:
-        ctx.set_lot_active(order["account_id"], ctx.config["extend_offer_id"], False)
+        ctx.set_lot_active(order["account_id"], rent.get("extend_offer_id") or ctx.config["extend_offer_id"], False)
     except Exception as e:
         notify("attention", f"🎮 Продление #{order['id']}: не удалось выключить лот продления ({e}). Выключите вручную.")
     ctx.reply({"id": _chat(rent), "account_id": order["account_id"]}, _fill(ctx.config["extend_paid_text"], until=_hm(rent["until"])))
@@ -289,14 +299,15 @@ def on_message(msg, chat, ctx):
     if low.startswith(cfg["extend_command"].strip().lower()):
         if not rent or rent["until"] <= time.time():
             ctx.reply(chat, cfg["no_rent_text"]); return True
+        _ext_lot = rent.get("extend_offer_id") or cfg["extend_offer_id"]
         try:
-            ctx.set_lot_active(chat["account_id"], cfg["extend_offer_id"], True)
+            ctx.set_lot_active(chat["account_id"], _ext_lot, True)
         except Exception as e:
             ctx.reply(chat, "Не получилось открыть продление, попробуйте через минуту.")
             notify("attention", f"🎮 !продлить от {chat['name']}: не удалось включить лот продления ({e}).")
             return True
         from core.funpay import FunPayAccount
-        link = FunPayAccount.offer_link(cfg["extend_offer_id"])
+        link = FunPayAccount.offer_link(_ext_lot)
         pend = _kv("pending_extend", {})
         pend[f"{chat['account_id']}:{chat['name'].lower()}"] = {"order_id": oid, "deadline": time.time() + 600, "chat_id": chat["id"]}
         _kv_set("pending_extend", pend)
@@ -321,7 +332,8 @@ def on_review(review, ctx):
         return
     if rent.get("review_bonus"):
         return  # бонус за эту аренду уже был
-    min_hours = float(ctx.config.get("review_bonus_min_hours") or 0)
+    _bacc = next((a for a in steam_accounts() if a["login"] == rent.get("steam_login")), None)
+    min_hours = float(_acc_opt(_bacc, "review_bonus_min_hours", ctx.config, 0) or 0)
     if min_hours and rent.get("hours", 0) < min_hours:
         return  # куплено слишком мало часов — бонус не положен
     rent["review_bonus"] = True
@@ -348,8 +360,10 @@ def on_tick(ctx):
     for k in expired:
         info = pend.pop(k)
         acc_id = int(k.split(":")[0])
+        _r0 = r.get(info["order_id"])
+        _ext0 = (_r0 or {}).get("extend_offer_id") or cfg["extend_offer_id"]
         try:
-            ctx.set_lot_active(acc_id, cfg["extend_offer_id"], False)
+            ctx.set_lot_active(acc_id, _ext0, False)
         except Exception as e:
             notify("attention", f"🎮 Просрочено продление: не удалось выключить лот ({e}). Выключите вручную.")
         rent = r.get(info["order_id"])
