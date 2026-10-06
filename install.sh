@@ -53,6 +53,44 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$PORT"/tcp >/dev/null
 fi
 
+step "Настраиваю автообновление"
+# Служба обновляется с GitHub каждые 5 минут — клиент всегда на свежей версии.
+# Путь $DIR подставляется сразу; служебные $(...) экранированы, чтобы попасть в файл как есть.
+cat > /usr/local/bin/lotus-update.sh << UPD
+#!/bin/bash
+set -e
+cd $DIR || exit 1
+git fetch origin main --quiet
+[ "\$(git rev-parse HEAD)" = "\$(git rev-parse origin/main)" ] && exit 0
+echo "\$(date '+%F %T') обновляю..." >> /var/log/lotus-update.log
+git reset --hard origin/main >> /var/log/lotus-update.log 2>&1
+docker compose up -d --build >> /var/log/lotus-update.log 2>&1
+echo "\$(date '+%F %T') обновлено" >> /var/log/lotus-update.log
+UPD
+chmod +x /usr/local/bin/lotus-update.sh
+
+cat > /etc/systemd/system/lotus-update.service << 'UNIT'
+[Unit]
+Description=Lotus auto-update
+After=network-online.target docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/lotus-update.sh
+UNIT
+
+cat > /etc/systemd/system/lotus-update.timer << 'TIMER'
+[Unit]
+Description=Lotus auto-update
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target
+TIMER
+
+systemctl daemon-reload
+systemctl enable --now lotus-update.timer >/dev/null 2>&1
+
 TOKEN="$(grep '^KASSA_TOKEN=' .env | cut -d= -f2)"
 FP="$(openssl x509 -in data/certs/cert.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
 IP="$(curl -s4 --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}')"
