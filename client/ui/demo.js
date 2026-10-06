@@ -140,9 +140,9 @@ const Demo = (() => {
     { order_id: "RENT9002", buyer: "newguy", account_id: 1, got_photo: false, created: now - 1200 },
   ];
   const rentAccounts = [
-    { login: "csgo_rent_01", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788", offer_id: "3910101", extend_offer_id: "3911001", onlypc_check: true, hide_lot_on_rent: null, review_bonus_min_hours: "" },
-    { login: "csgo_rent_02", password: "Zt4hNb8Rty", has_mafile: true, enabled: true, state: "free", rented_until: null, rented_by: null, order_id: null },
-    { login: "dota_rent_01", password: "Wq1vCx7Uio", has_mafile: false, enabled: true, state: "needs_reset", rented_until: null, rented_by: null, order_id: null },
+    { login: "csgo_rent_01", title: "КС Прайм 2000ч", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788", offer_id: "3910101", extend_offer_id: "3911001", onlypc_check: true, hide_lot_on_rent: null, review_bonus_min_hours: "" },
+    { login: "csgo_rent_02", title: "КС Прайм 2000ч", password: "Zt4hNb8Rty", has_mafile: true, enabled: true, state: "free", rented_until: null, rented_by: null, order_id: null },
+    { login: "dota_rent_01", title: "Дота Калибровка", password: "Wq1vCx7Uio", has_mafile: false, enabled: true, state: "needs_reset", rented_until: null, rented_by: null, order_id: null },
     { login: "csgo_rent_03", password: "Mn5jDk3Poi", has_mafile: true, enabled: false, state: "free", rented_until: null, rented_by: null, order_id: null },
   ];
   const delivery = [
