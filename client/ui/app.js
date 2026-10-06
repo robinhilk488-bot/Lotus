@@ -621,12 +621,20 @@ pages.chats = async root => {
     Object.assign(chatView, { acc, id, name });
     renderList();
     $("#chat-box").innerHTML = `
-      <div class="chat-head"><h2>${esc(name)}</h2><span class="muted small">Enter — отправить, Shift+Enter — новая строка</span></div>
+      <div class="chat-head"><div class="chat-head-top"><h2>${esc(name)}</h2><span class="muted small">Enter — отправить, Shift+Enter — новая строка</span></div><div class="chat-lot muted small" id="chat-lot" hidden></div></div>
       <div class="chat-msgs" id="chat-msgs" data-first="1"><div class="msg-sys">Загружаю переписку…</div></div>
       <form class="chat-input" id="chat-form"><textarea id="chat-text" rows="2" placeholder="Сообщение покупателю"></textarea><button class="btn primary">Отправить</button></form>`;
     const load = async () => {
       if (chatView.acc !== acc || chatView.id !== id) return;
-      try { const r = await api("GET", `/api/chats/${acc}/${encodeURIComponent(id)}`); renderMessages(r.messages, r.warning); }
+      try {
+        const r = await api("GET", `/api/chats/${acc}/${encodeURIComponent(id)}`);
+        renderMessages(r.messages, r.warning);
+        const le = $("#chat-lot");
+        if (le && r.order && r.order.lot) {
+          le.hidden = false;
+          le.innerHTML = `<span class="lot-tag">Лот</span> ${esc(r.order.lot)} <span class="muted">· заказ #${esc(r.order.order_id)}</span>`;
+        } else if (le) { le.hidden = true; }
+      }
       catch (e) { renderMessages([], e.message); }
     };
     await load();
