@@ -822,10 +822,30 @@ async function renderRentInto(root) {
     <label class="field"><span>maFile (содержимое файла из Steam Desktop Authenticator)</span><textarea name="mafile" rows="4" placeholder='${a.has_mafile ? "maFile загружен. Вставьте новый, чтобы заменить" : '{"shared_secret":"…", "account_name":"…"}'}'></textarea>
       <small class="hint">Нужен для кодов Guard и смены пароля. Хранится на сервере в зашифрованном виде.</small></label>
     <label class="field"><span>ID лота этого аккаунта на FunPay (необязательно)</span><input name="offer_id" value="${esc(a.offer_id || "")}" placeholder="Число из ссылки offer?id=...">
-      <small class="hint">Если указать — лот будет скрываться на время аренды (можно отключить в настройках плагина).</small></label>`;
+      <small class="hint">Если указать — лот будет скрываться на время аренды.</small></label>
+    <div class="acc-own"><div class="acc-own-title">Индивидуальные настройки этого аккаунта</div>
+      <small class="hint" style="margin-bottom:10px;display:block">Пусто / «как в общих» — берётся значение из блока «Тексты и лот продления». Заполните, чтобы переопределить для этого аккаунта.</small>
+      <label class="field"><span>Свой ID лота продления</span><input name="extend_offer_id" value="${esc(a.extend_offer_id || "")}" placeholder="Пусто — общий из настроек">
+        <small class="hint">Отдельный лот «Продление» именно для этого аккаунта.</small></label>
+      <label class="field"><span>Проверка OnlyPC (фото из клуба)</span><select name="onlypc_check">
+        <option value="">Как в общих настройках</option>
+        <option value="1" ${a.onlypc_check === true ? "selected" : ""}>Включить</option>
+        <option value="0" ${a.onlypc_check === false ? "selected" : ""}>Выключить</option></select></label>
+      <label class="field"><span>Скрывать лот на время аренды</span><select name="hide_lot_on_rent">
+        <option value="">Как в общих настройках</option>
+        <option value="1" ${a.hide_lot_on_rent === true ? "selected" : ""}>Включить</option>
+        <option value="0" ${a.hide_lot_on_rent === false ? "selected" : ""}>Выключить</option></select></label>
+      <label class="field"><span>Час за отзыв только если куплено от, часов</span><input name="review_bonus_min_hours" type="number" value="${a.review_bonus_min_hours ?? ""}" placeholder="Пусто — общий из настроек"></label>
+    </div>`;
 
+  const tri = v => v === "" ? null : v === "1";
   $("#add-acc").onclick = () => modal(`<h2>Новый аккаунт для аренды</h2>${accForm()}`, "Добавить", async f => {
-    await api("POST", "/api/rent/accounts", { login: f.login.value, password: f.password.value, mafile: f.mafile.value, offer_id: f.offer_id.value });
+    await api("POST", "/api/rent/accounts", {
+      login: f.login.value, password: f.password.value, mafile: f.mafile.value, offer_id: f.offer_id.value,
+      extend_offer_id: f.extend_offer_id.value, onlypc_check: tri(f.onlypc_check.value),
+      hide_lot_on_rent: tri(f.hide_lot_on_rent.value),
+      review_bonus_min_hours: f.review_bonus_min_hours.value === "" ? "" : Number(f.review_bonus_min_hours.value),
+    });
     toast("Аккаунт добавлен"); reopenRent();
   });
   root.querySelectorAll("[data-edit]").forEach(b => (b.onclick = () => {
@@ -835,6 +855,10 @@ async function renderRentInto(root) {
       if (f.password.value.trim()) body.password = f.password.value.trim();
       if (f.mafile.value.trim()) body.mafile = f.mafile.value.trim();
       body.offer_id = f.offer_id.value;
+      body.extend_offer_id = f.extend_offer_id.value;
+      body.onlypc_check = tri(f.onlypc_check.value);
+      body.hide_lot_on_rent = tri(f.hide_lot_on_rent.value);
+      body.review_bonus_min_hours = f.review_bonus_min_hours.value === "" ? "" : Number(f.review_bonus_min_hours.value);
       await api("PUT", `/api/rent/accounts/${encodeURIComponent(a.login)}`, body); toast("Сохранено"); reopenRent();
     });
   }));
@@ -875,13 +899,23 @@ async function renderRentInto(root) {
       const v = p.config[st.key] ?? st.default ?? "";
       const lbl = `${esc(st.label)}${st.required ? ' <span class="req">обязательно</span>' : ""}`;
       const hint = st.hint ? `<small class="hint">${esc(st.hint)}</small>` : "";
+      if (st.type === "bool") return `<div class="row"><div>${lbl}${hint}</div><label class="switch"><input type="checkbox" name="${st.key}" ${v ? "checked" : ""}><i></i></label></div>`;
       if (st.type === "number") return `<label class="field"><span>${lbl}</span><input name="${st.key}" type="number" value="${esc(v)}">${hint}</label>`;
       if (st.type === "textarea") return `<label class="field"><span>${lbl}</span><textarea name="${st.key}" rows="3">${esc(v)}</textarea>${hint}</label>`;
+      if (st.type === "select") return `<label class="field"><span>${lbl}</span><select name="${st.key}">${(st.options || []).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>${hint}</label>`;
+      if (st.type === "secret") { const set = p.secrets_set && p.secrets_set[st.key];
+        return `<label class="field"><span>${lbl}</span><input name="${st.key}" type="password" autocomplete="off" placeholder="${set ? "Сохранён — пусто = не менять" : "Вставьте ключ"}">${hint}</label>`; }
       return `<label class="field"><span>${lbl}</span><input name="${st.key}" value="${esc(v)}">${hint}</label>`;
     }).join("");
     modal(`<h2>Настройка аренды</h2><p class="muted">Подстановки: {buyer}, {login}, {password}, {until}, {hours}, {code}, {link}.</p>${fields}`, "Сохранить", async f => {
       const c = {};
-      p.settings.forEach(st => { c[st.key] = st.type === "number" ? Number(f.elements[st.key].value) : f.elements[st.key].value; });
+      p.settings.forEach(st => {
+        const el = f.elements[st.key];
+        if (st.type === "bool") c[st.key] = el.checked;
+        else if (st.type === "number") c[st.key] = el.value === "" ? "" : Number(el.value);
+        else if (st.type === "secret") { if (el.value) c[st.key] = el.value; }  // пусто = не менять
+        else c[st.key] = el.value;
+      });
       await api("PUT", "/api/plugins/rent_steam/config", c); toast("Настройки сохранены"); reopenRent();
     });
   };
