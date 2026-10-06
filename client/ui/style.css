@@ -422,3 +422,7 @@ td .switch { display: inline-block; }
   .topnav a { padding: 7px 7px; font-size: 12px; }
   .topbal { display: none; }
 }
+
+/* индивидуальные настройки аккаунта аренды */
+.acc-own { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.acc-own-title { font-family: var(--display); font-weight: 600; font-size: 14px; margin-bottom: 4px; }
