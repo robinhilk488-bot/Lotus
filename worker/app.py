@@ -400,8 +400,25 @@ def rent_accounts():
                     "rented_until": rent[1]["until"] if rent else None,
                     "rented_by": rent[1]["buyer"] if rent else None,
                     "order_id": rent[0] if rent else None,
-                    "offer_id": a.get("offer_id", "")})
+                    "offer_id": a.get("offer_id", ""),
+                    "extend_offer_id": a.get("extend_offer_id", ""),
+                    "onlypc_check": a.get("onlypc_check", None),
+                    "hide_lot_on_rent": a.get("hide_lot_on_rent", None),
+                    "review_bonus_min_hours": a.get("review_bonus_min_hours", "")})
     return jsonify(out)
+
+
+def _apply_rent_opts(acc, d):
+    """Индивидуальные настройки аккаунта аренды. Пусто/нет = наследует общие из настроек плагина."""
+    if "extend_offer_id" in d:
+        acc["extend_offer_id"] = (d.get("extend_offer_id") or "").strip()
+    if "review_bonus_min_hours" in d:
+        v = d.get("review_bonus_min_hours")
+        acc["review_bonus_min_hours"] = "" if v in (None, "") else float(v)
+    # bool-настройки: None = наследовать, True/False = своё значение
+    for k in ("onlypc_check", "hide_lot_on_rent"):
+        if k in d:
+            acc[k] = None if d[k] is None else bool(d[k])
 
 
 @app.post("/api/rent/accounts")
@@ -420,9 +437,11 @@ def rent_add():
     accs = _rent._raw_accounts()
     if any(x["login"].lower() == login.lower() for x in accs):
         return err(f"Аккаунт {login} уже добавлен")
-    accs.append({"login": login, "password": encrypt(password),
+    new_acc = {"login": login, "password": encrypt(password),
                  "shared_secret": encrypt(ss) if ss else "", "enabled": True, "state": "free",
-                 "offer_id": (d.get("offer_id") or "").strip()})
+                 "offer_id": (d.get("offer_id") or "").strip()}
+    _apply_rent_opts(new_acc, d)
+    accs.append(new_acc)
     _rent._kv_set("accounts", accs)
     db.log(f"Аренда: добавлен аккаунт {login}")
     return jsonify(ok=True)
@@ -439,6 +458,7 @@ def rent_edit(login):
         acc["enabled"] = bool(d["enabled"])
     if "offer_id" in d:
         acc["offer_id"] = (d.get("offer_id") or "").strip()
+    _apply_rent_opts(acc, d)
     if d.get("password"):
         acc["password"] = encrypt(d["password"].strip())
     if d.get("mafile"):
