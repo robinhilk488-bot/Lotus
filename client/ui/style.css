@@ -426,3 +426,5 @@ td .switch { display: inline-block; }
 /* индивидуальные настройки аккаунта аренды */
 .acc-own { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
 .acc-own-title { font-family: var(--display); font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+
+.acc-title { font-size: 12px; color: var(--gold); font-weight: 600; margin-bottom: 2px; }
