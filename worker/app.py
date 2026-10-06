@@ -395,7 +395,7 @@ def rent_accounts():
     out = []
     for a in _rent.steam_accounts():
         rent = busy.get(a["login"])
-        out.append({"login": a["login"], "password": a["password"], "has_mafile": bool(a.get("shared_secret")),
+        out.append({"login": a["login"], "title": a.get("title", ""), "password": a["password"], "has_mafile": bool(a.get("shared_secret")),
                     "enabled": a.get("enabled", True), "state": a.get("state", "free"),
                     "rented_until": rent[1]["until"] if rent else None,
                     "rented_by": rent[1]["buyer"] if rent else None,
@@ -437,7 +437,7 @@ def rent_add():
     accs = _rent._raw_accounts()
     if any(x["login"].lower() == login.lower() for x in accs):
         return err(f"Аккаунт {login} уже добавлен")
-    new_acc = {"login": login, "password": encrypt(password),
+    new_acc = {"login": login, "title": (d.get("title") or "").strip(), "password": encrypt(password),
                  "shared_secret": encrypt(ss) if ss else "", "enabled": True, "state": "free",
                  "offer_id": (d.get("offer_id") or "").strip()}
     _apply_rent_opts(new_acc, d)
@@ -456,6 +456,8 @@ def rent_edit(login):
         return err("Аккаунт не найден", 404)
     if "enabled" in d:
         acc["enabled"] = bool(d["enabled"])
+    if "title" in d:
+        acc["title"] = (d.get("title") or "").strip()
     if "offer_id" in d:
         acc["offer_id"] = (d.get("offer_id") or "").strip()
     _apply_rent_opts(acc, d)
