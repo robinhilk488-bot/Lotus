@@ -23,6 +23,8 @@ SETTINGS = [
     {"key": "greet_enabled", "label": "Приветствие на первое сообщение", "type": "bool", "default": True},
     {"key": "greet_text", "label": "Текст приветствия", "type": "textarea",
      "default": "Здравствуйте, {buyer}! Товар выдаётся автоматически сразу после оплаты. Если возникнут вопросы — пишите."},
+    {"key": "greet_photo", "label": "Фото к приветствию (необязательно)", "type": "image",
+     "hint": "Картинка отправится вместе с приветствием. Например, инструкция или баннер магазина."},
 
     {"key": "rules", "label": "Ответы по ключевым словам", "type": "textarea",
      "default": "гарантия | возврат = Гарантия 24 часа. Если возникнут проблемы — вернём деньги или заменим товар.",
@@ -33,6 +35,8 @@ SETTINGS = [
     {"key": "ask_review_enabled", "label": "Просить отзыв после подтверждения заказа", "type": "bool", "default": True},
     {"key": "ask_review_text", "label": "Текст просьбы об отзыве", "type": "textarea",
      "default": "Спасибо за покупку, {buyer}! Будем благодарны за отзыв — это очень помогает магазину."},
+    {"key": "ask_review_photo", "label": "Фото к просьбе об отзыве (необязательно)", "type": "image",
+     "hint": "Например, картинка-инструкция, как оставить отзыв."},
 
     {"key": "review_reply_enabled", "label": "Отвечать под отзывами", "type": "bool", "default": False,
      "hint": "Бот публикует ответ ПОД отзывом покупателя (не в чате). Для каждой оценки свой текст; пустое поле — не отвечать."},
@@ -90,6 +94,10 @@ def on_message(msg, chat, ctx):
                 ctx.log(f"Поприветствовал бы {chat['name']}")
             else:
                 ctx.reply(chat, _fill(cfg["greet_text"], buyer=chat["name"]))
+                try:
+                    ctx.reply_image(chat, ctx.plugin_image("greet_photo"))
+                except Exception as e:
+                    ctx.log(f"не удалось отправить фото приветствия: {e}", "warn")
                 _kv_set(gkey, 1)
                 ctx.log(f"Приветствие: {chat['name']}")
             handled = True
@@ -125,6 +133,10 @@ def on_order_confirmed(order, ctx):
         ctx.log(f"Попросил бы отзыв по заказу #{order['order_id']}")
     else:
         ctx.reply(chat, _fill(cfg["ask_review_text"], buyer=order["buyer"], order=order["order_id"]))
+        try:
+            ctx.reply_image(chat, ctx.plugin_image("ask_review_photo"))
+        except Exception as e:
+            ctx.log(f"не удалось отправить фото к просьбе об отзыве: {e}", "warn")
         _kv_set(key, 1)
         ctx.log(f"Просьба об отзыве: #{order['order_id']} ({order['buyer']})", "order")
 
