@@ -335,6 +335,20 @@ pages.sales = async root => {
 
 // ---------- Плагины ----------
 let pluginFilter = "working";
+let pluginAccess = "all";   // all | free | sub
+let pluginCat = "all";      // категория
+let pluginSearch = "";
+let pluginSelected = null;   // id плагина, открытого в карточке справа
+
+// иконки для категорий/плагинов (emoji — работают в любом WebView)
+const PLUGIN_ICONS = {
+  autodelivery: "📦", autoresponder: "💬", ai_assistant: "🤖", autosmm: "📈",
+  offline_activite: "🔑", email_code: "✉️", rent_steam: "🎮", big_orders: "💰",
+  auto_stars: "⭐", auto_gifts: "🎁", roblox_vip: "🧩", autoticket: "🎫",
+  _cat: { "Основное": "📦", "Покупатели": "💬", "Telegram": "✈️", "Steam": "🎮",
+          "Аренда аккаунтов": "🔑", "Выдача через поставщиков": "🛒", "Уведомления": "🔔" }
+};
+const pluginIcon = p => PLUGIN_ICONS[p.id] || PLUGIN_ICONS._cat[p.category] || "🔌";
 
 // ---------- полноэкранное окно настройки плагина ----------
 let _rentReopen = null;
@@ -425,6 +439,15 @@ async function openPluginConfig(id) {
       return `<label class="field"><span>${label(s)}</span><div class="secret"><input name="${s.key}" type="password" autocomplete="off" placeholder="${set ? "Сохранён — пусто = не менять" : "Вставьте ключ"}">${set ? `<button type="button" class="btn ghost" data-clear="${s.key}">Стереть</button>` : ""}</div>${hint(s)}</label>`; }
     if (s.type === "textarea") return `<label class="field"><span>${label(s)}</span><textarea name="${s.key}" rows="4">${esc(v)}</textarea>${hint(s)}</label>`;
     if (s.type === "select") return `<label class="field"><span>${label(s)}</span><select name="${s.key}">${(s.options || []).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>${hint(s)}</label>`;
+    if (s.type === "image") { const set = (p.images_set || {})[s.key];
+      return `<div class="field"><span>${label(s)}</span>
+        <div class="img-field">
+          <div class="img-status ${set ? "on" : ""}">${set ? "✓ Фото загружено" : "Фото не загружено"}</div>
+          <div class="img-actions">
+            <label class="btn ghost">${set ? "Заменить" : "Загрузить фото"}<input type="file" accept="image/*" data-imgupload="${s.key}" hidden></label>
+            ${set ? `<button type="button" class="btn ghost" data-imgdel="${s.key}">Удалить</button>` : ""}
+          </div>
+        </div>${hint(s)}</div>`; }
     return `<label class="field"><span>${label(s)}</span><input name="${s.key}" type="${s.type === "number" ? "number" : "text"}" step="any" value="${esc(v)}">${hint(s)}</label>`;
   }).join("");
   body.innerHTML = `<div class="cfg-cols">
@@ -446,10 +469,23 @@ async function openPluginConfig(id) {
     clear.add(x.dataset.clear); const inp = x.previousElementSibling; inp.placeholder = "Будет стёрт при сохранении"; inp.value = ""; x.remove();
   }));
   const form = body.querySelector("#cfg-form");
+  // загрузка фото (тип image) — отдельным запросом, сразу при выборе файла
+  body.querySelectorAll("[data-imgupload]").forEach(inp => inp.onchange = async () => {
+    const file = inp.files[0]; if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast("Картинка больше 5 МБ", true); return; }
+    const key = inp.dataset.imgupload;
+    const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+    try { await api("POST", `/api/plugins/${p.id}/image/${key}`, { data_b64: b64 }); toast("Фото загружено"); openPluginConfig(p.id); }
+    catch (e) { toast("Не удалось загрузить фото", true); }
+  });
+  body.querySelectorAll("[data-imgdel]").forEach(btn => btn.onclick = async () => {
+    try { await api("DELETE", `/api/plugins/${p.id}/image/${btn.dataset.imgdel}`); toast("Фото удалено"); openPluginConfig(p.id); }
+    catch (e) { toast(e.message, true); }
+  });
   if (p.settings.length) form.onsubmit = async e => {
     e.preventDefault();
     const cfg = { __clear__: [...clear] };
-    p.settings.forEach(s => { const el = form.elements[s.key]; cfg[s.key] = s.type === "bool" ? el.checked : s.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value; });
+    p.settings.forEach(s => { if (s.type === "image") return; const el = form.elements[s.key]; cfg[s.key] = s.type === "bool" ? el.checked : s.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value; });
     try { await api("PUT", `/api/plugins/${p.id}/config`, cfg); toast("Настройки сохранены"); } catch (err) { toast(err.message, true); }
   };
   const test = body.querySelector("#cfg-test");
@@ -472,28 +508,86 @@ async function openPluginConfig(id) {
 
 pages.plugins = async root => {
   const [list, tasks] = await Promise.all([api("GET", "/api/plugins"), api("GET", "/api/tasks?limit=60")]);
-  // статус плагина: enabled | working (готов, настроен) | broken (готов, но не настроен) | soon (в разработке)
-  const statusOf = p => !p.ready ? "soon" : p.enabled ? "enabled" : "working";
-  const counts = { enabled: 0, working: 0, soon: 0 };
-  list.forEach(p => counts[statusOf(p)]++);
-  const FILTERS = [["enabled", "Включённые"], ["working", "Рабочие"], ["soon", "В разработке"]];
-  const enabledList = list.filter(p => statusOf(p) === "enabled");
-  const shown = list.filter(p => statusOf(p) === pluginFilter);
+
+  // доступ: free (бесплатный) | sub (по подписке)
+  const accessOf = p => p.access || "free";
+  const ACCESS = [["all", "Все"], ["free", "Бесплатные"], ["sub", "Подписка"]];
+
+  // применяем фильтры: доступ + категория + поиск
+  const q = pluginSearch.trim().toLowerCase();
+  let filtered = list.filter(p => {
+    if (pluginAccess !== "all" && accessOf(p) !== pluginAccess) return false;
+    if (pluginCat !== "all" && p.category !== pluginCat) return false;
+    if (q && !(`${p.name} ${p.description} ${p.category}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  // категории с подсчётом
+  const cats = [];
+  list.forEach(p => { if (pluginAccess === "all" || accessOf(p) === pluginAccess) { let c = cats.find(x => x[0] === p.category); if (!c) cats.push(c = [p.category, 0]); c[1]++; } });
   const groups = [];
-  shown.forEach(p => { let g = groups.find(x => x[0] === p.category); if (!g) groups.push(g = [p.category, []]); g[1].push(p); });
+  filtered.forEach(p => { let g = groups.find(x => x[0] === p.category); if (!g) groups.push(g = [p.category, []]); g[1].push(p); });
+
+  // выбранный плагин для панели справа
+  const sel = pluginSelected ? list.find(p => p.id === pluginSelected) : (filtered[0] || null);
+
   const attention = tasks.filter(t => t.status === "attention");
   const noSub = state.sub && state.sub.configured && !state.sub.active;
   const TASK = { done: "Выполнен", skipped: "Не его лот", pending: "В очереди", running: "Обрабатывается", attention: "Нужна проверка", cancelled: "Отменён" };
   const taskPill = s => `<span class="pill ${{ done: "closed", attention: "refunded", pending: "paid", running: "paid", cancelled: "new", skipped: "new" }[s] || ""}">${TASK[s] || s}</span>`;
 
+  const accessBadge = p => accessOf(p) === "sub" ? `<span class="acc-badge sub">Подписка</span>` : `<span class="acc-badge free">Бесплатно</span>`;
+
+  const card = p => `
+    <div class="pcard ${pluginSelected === p.id ? "sel" : ""} ${p.ready ? "" : "soon"}" data-sel="${p.id}">
+      <div class="pcard-top">
+        <div class="pcard-icon">${pluginIcon(p)}</div>
+        <button class="pcard-star" data-fav="${p.id}" title="В избранное">☆</button>
+      </div>
+      <h3>${esc(p.name)}</h3>
+      <p>${esc(p.description)}</p>
+      <div class="pcard-foot">
+        ${accessBadge(p)}
+        ${p.ready
+          ? `<span class="pcard-state ${p.enabled ? "on" : ""}">${p.enabled ? "Включён" : "Выключен"}</span>
+             <button class="btn ghost small" data-cfg="${p.id}">Настройки</button>`
+          : `<span class="pcard-state soon">В разработке</span>`}
+      </div>
+    </div>`;
+
+  const sidePanel = sel ? `
+    <aside class="pdetail">
+      <div class="pdetail-head">
+        <div class="pcard-icon big">${pluginIcon(sel)}</div>
+        <div><h2>${esc(sel.name)}</h2><div class="muted small">${esc(sel.category)}</div></div>
+      </div>
+      <p class="muted">${esc(sel.description)}</p>
+      <div class="pdetail-rows">
+        <div><span>Доступ</span>${accessBadge(sel)}</div>
+        <div><span>Состояние</span><b class="${sel.ready && sel.enabled ? "mint" : ""}">${!sel.ready ? "В разработке" : sel.enabled ? "Включён" : "Выключен"}</b></div>
+        ${sel.ready ? `<div><span>Версия</span><b>${esc(sel.version)}</b></div>` : ""}
+      </div>
+      ${!sel.ready ? `<div class="pdetail-needs"><b>Для запуска нужно:</b><br>${esc(sel.needs.join("; "))}</div>` : `
+        ${sel.missing && sel.missing.length ? `<div class="warn-text" style="margin:10px 0">Заполните: ${esc(sel.missing.join(", "))}</div>` : ""}
+        <div class="pdetail-stats">
+          <div><b>${sel.tasks.done}</b><span>выполнено</span></div>
+          ${sel.tasks.pending ? `<div><b>${sel.tasks.pending}</b><span>в очереди</span></div>` : ""}
+          ${sel.tasks.attention ? `<div class="warn-text"><b>${sel.tasks.attention}</b><span>на проверку</span></div>` : ""}
+        </div>
+        <div class="pdetail-actions">
+          <button class="btn" data-cfg="${sel.id}">Открыть настройки</button>
+          <label class="switch" title="${sel.enabled ? "Выключить" : "Включить"}"><input type="checkbox" data-on="${sel.id}" ${sel.enabled ? "checked" : ""}><i></i></label>
+        </div>`}
+    </aside>` : "";
+
   root.innerHTML = `
     <div class="page-head"><h1>Плагины</h1>
-      <div class="seg">${FILTERS.map(([k, t]) => `<button data-f="${k}" class="${pluginFilter === k ? "on" : ""}">${t}${counts[k] ? ` <span class="seg-count">${counts[k]}</span>` : ""}</button>`).join("")}</div></div>
+      <div class="muted small">Автоматизация общения, выдачи товаров и аренды</div>
+    </div>
 
-    ${noSub ? `<a class="banner" onclick="go('subscription')"><b>Подписка неактивна.</b> Плагины не принимают новые заказы. Откройте раздел «Подписка», чтобы активировать код.</a>` : ""}
+    ${noSub ? `<a class="banner" onclick="go('subscription')"><b>Подписка неактивна.</b> Плагины по подписке не принимают новые заказы. Откройте раздел «Подписка».</a>` : ""}
     ${attention.length ? `<section class="panel alert" style="margin-bottom:16px">
       <div class="panel-head"><h2>Нужна ваша проверка: ${attention.length}</h2></div>
-      <p class="muted" style="margin-bottom:12px">Эти заказы плагин не довёл до конца. Сервер не повторяет их сам, чтобы не купить и не выдать товар дважды. Проверьте, получил ли покупатель товар, и выберите действие.</p>
+      <p class="muted" style="margin-bottom:12px">Эти заказы плагин не довёл до конца. Проверьте, получил ли покупатель товар, и выберите действие.</p>
       ${attention.map(t => `<div class="task">
         <div><b>#${esc(t.order_id)}</b> · ${esc(t.plugin_name)} · ${money(t.amount, t.currency)} · ${esc(t.buyer)}
           <div class="lot muted">${esc(t.description)}</div><div class="err">${esc(t.error)}</div></div>
@@ -501,34 +595,26 @@ pages.plugins = async root => {
       </div>`).join("")}
     </section>` : ""}
 
-    ${groups.map(([cat, items]) => `<h2 class="group">${esc(cat)}</h2><div class="plugins">${items.map(p => p.ready ? `
-      <section class="panel plugin">
-        <div>
-          <h3>${esc(p.name)}<span class="ver">v${esc(p.version)}</span></h3>
-          <p>${esc(p.description)}</p>
-          <div class="plugin-meta">
-            ${p.missing.length ? `<span class="warn-text">Заполните: ${esc(p.missing.join(", "))}</span>` : ""}
-            <span>Выполнено: ${p.tasks.done}</span>
-            ${p.tasks.pending ? `<span>В очереди: ${p.tasks.pending}</span>` : ""}
-            ${p.tasks.attention ? `<span class="warn-text">Нужна проверка: ${p.tasks.attention}</span>` : ""}
-          </div>
-        </div>
-        <div class="plugin-actions">
-          <button class="btn" data-cfg="${p.id}">Настроить</button>
-        </div>
-        <label class="switch" title="${p.enabled ? "Выключить" : "Включить"}"><input type="checkbox" data-on="${p.id}" ${p.enabled ? "checked" : ""}><i></i></label>
-      </section>` : `
-      <section class="panel plugin soon">
-        <div>
-          <h3>${esc(p.name)}<span class="pill new">В разработке</span></h3>
-          <p>${esc(p.description)}</p>
-          <div class="plugin-meta"><span>Для запуска нужно: ${esc(p.needs.join("; "))}</span></div>
-        </div>
-        <div></div>
-        <label class="switch" title="Плагин ещё в разработке"><input type="checkbox" disabled><i></i></label>
-      </section>`).join("")}</div>`).join("") || `<div class="panel empty"><h2>${pluginFilter === "enabled" ? "Ни один плагин не включён" : pluginFilter === "soon" ? "Нет плагинов в разработке" : "Нет готовых плагинов"}</h2><p class="muted">${pluginFilter === "enabled" ? "Включите плагин во вкладке «Рабочие» — он появится здесь." : "Переключите вкладку выше."}</p></div>`}
+    <div class="pcatalog-bar">
+      <input id="psearch" class="psearch" placeholder="Что нужно автоматизировать? Например: Robux, аренда, отзыв…" value="${esc(pluginSearch)}">
+      <div class="seg access-seg">${ACCESS.map(([k, t]) => `<button data-acc="${k}" class="${pluginAccess === k ? "on" : ""}">${t}</button>`).join("")}</div>
+    </div>
+    <div class="pchips">
+      <button class="pchip ${pluginCat === "all" ? "on" : ""}" data-cat="all">Все задачи <span>${filtered.length}</span></button>
+      ${cats.map(([c, n]) => `<button class="pchip ${pluginCat === c ? "on" : ""}" data-cat="${esc(c)}">${PLUGIN_ICONS._cat[c] || "🔌"} ${esc(c)} <span>${n}</span></button>`).join("")}
+    </div>
 
-    <section class="panel" style="margin-top:16px">
+    <div class="pcatalog">
+      <div class="pcatalog-main">
+        ${groups.length ? groups.map(([cat, items]) => `
+          <h2 class="group">${PLUGIN_ICONS._cat[cat] || "🔌"} ${esc(cat)}</h2>
+          <div class="pcards">${items.map(card).join("")}</div>
+        `).join("") : `<div class="panel empty"><h2>Ничего не найдено</h2><p class="muted">Измените поиск или фильтры.</p></div>`}
+      </div>
+      ${sidePanel}
+    </div>
+
+    <section class="panel" style="margin-top:20px">
       <div class="panel-head"><h2>Заказы в работе у плагинов</h2><span class="muted small">последние ${tasks.length}</span></div>
       ${tasks.length ? `<div class="table-wrap"><table>
         <thead><tr><th>Время</th><th>Заказ</th><th>Плагин</th><th>Товар</th><th>Статус</th><th>Результат</th></tr></thead>
@@ -538,12 +624,20 @@ pages.plugins = async root => {
       : `<p class="muted">Когда придёт оплаченный заказ, здесь будет видно, как его обработал каждый плагин.</p>`}
     </section>`;
 
+  // поиск — живой, без перерисовки всей страницы (чтобы фокус не слетал)
+  const ps = $("#psearch");
+  if (ps) ps.oninput = () => { pluginSearch = ps.value; clearTimeout(ps._t); ps._t = setTimeout(() => go("plugins"), 250); };
+
+  root.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { pluginAccess = b.dataset.acc; pluginCat = "all"; pluginSelected = null; go("plugins"); });
+  root.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { pluginCat = b.dataset.cat; pluginSelected = null; go("plugins"); });
+  root.querySelectorAll("[data-sel]").forEach(c => c.onclick = e => { if (e.target.closest("[data-cfg],[data-fav],[data-on]")) return; pluginSelected = c.dataset.sel; go("plugins"); });
+
   root.querySelectorAll("[data-on]").forEach(c => (c.onchange = async () => {
-    try { await api("POST", `/api/plugins/${c.dataset.on}/enabled`, { enabled: c.checked }); toast(c.checked ? "Плагин включён" : "Плагин выключен"); refreshBadge(); }
+    try { await api("POST", `/api/plugins/${c.dataset.on}/enabled`, { enabled: c.checked }); toast(c.checked ? "Плагин включён" : "Плагин выключен"); refreshBadge(); go("plugins"); }
     catch (e) { c.checked = !c.checked; toast(e.message, true); }
   }));
-
   root.querySelectorAll("[data-cfg]").forEach(b => (b.onclick = () => openPluginConfig(b.dataset.cfg)));
+  root.querySelectorAll("[data-fav]").forEach(b => (b.onclick = () => toast("Избранное появится позже")));
 
   root.querySelectorAll("[data-retry]").forEach(b => (b.onclick = () => {
     const t = attention.find(x => x.id === +b.dataset.retry);
@@ -554,7 +648,6 @@ pages.plugins = async root => {
     try { await api("POST", `/api/tasks/${b.dataset.resolve}/resolve`); toast("Отмечено как выполненное"); go("plugins"); refreshBadge(); }
     catch (e) { toast(e.message, true); }
   }));
-  root.querySelectorAll("[data-f]").forEach(b => (b.onclick = () => { pluginFilter = b.dataset.f; go("plugins"); }));
 };
 
 // ---------- общие помощники для форм настроек ----------
