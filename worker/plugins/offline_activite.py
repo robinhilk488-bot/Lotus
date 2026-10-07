@@ -111,10 +111,22 @@ def _usage_key(buyer, login):
     return f"usage:{login}:{(buyer or '').lower()}"
 
 
-def _check_and_count(buyer, login, limit, period_hours):
-    """True — можно выдать код; False — лимит исчерпан. При выдаче увеличивает счётчик."""
+def _limit_ok(buyer, login, limit, period_hours):
+    """True — лимит ещё не исчерпан (только проверка, счётчик НЕ трогает)."""
     if not limit or limit <= 0:
         return True
+    key = _usage_key(buyer, login)
+    r = db.query("SELECT value FROM plugin_kv WHERE plugin_id='offline_activite' AND key=?", (key,))
+    rec = json.loads(r[0]["value"]) if r else {"count": 0, "reset": 0}
+    now = time.time()
+    # истёкший период = счётчик сброшен
+    if period_hours and period_hours > 0 and rec.get("reset", 0) and now > rec["reset"]:
+        return True
+    return rec["count"] < limit
+
+
+def _count_use(buyer, login, period_hours):
+    """Засчитать выданный код. Вызывать ТОЛЬКО после успешной выдачи."""
     key = _usage_key(buyer, login)
     r = db.query("SELECT value FROM plugin_kv WHERE plugin_id='offline_activite' AND key=?", (key,))
     rec = json.loads(r[0]["value"]) if r else {"count": 0, "reset": 0}
@@ -124,12 +136,9 @@ def _check_and_count(buyer, login, limit, period_hours):
             rec = {"count": 0, "reset": now + period_hours * 3600}
         elif not rec.get("reset"):
             rec["reset"] = now + period_hours * 3600
-    if rec["count"] >= limit:
-        return False
     rec["count"] += 1
     db.execute("INSERT OR REPLACE INTO plugin_kv(plugin_id, key, value) VALUES('offline_activite', ?, ?)",
                (key, json.dumps(rec)))
-    return True
 
 
 def on_message(msg, chat, ctx):
@@ -147,7 +156,8 @@ def on_message(msg, chat, ctx):
         return True
     limit = int(ctx.config.get("limit") or 0)
     period = int(ctx.config.get("limit_hours") or 0)
-    if limit and not _check_and_count(chat["name"], login, limit, period):
+    # только ПРОВЕРЯЕМ лимит; засчитаем после успешной выдачи, чтобы ошибка не тратила попытку
+    if limit and not _limit_ok(chat["name"], login, limit, period):
         ctx.reply(chat, ctx.config["limit_reached"])
         ctx.log(f"Offline Activite: лимит кодов исчерпан у {chat['name']} для {login}", "warn")
         return True
@@ -161,5 +171,7 @@ def on_message(msg, chat, ctx):
         ctx.reply(chat, "Не удалось получить код — напишите продавцу.")
         return True
     ctx.reply(chat, ctx.config["reply"].replace("{code}", code).replace("{login}", login))
+    if limit:
+        _count_use(chat["name"], login, period)  # засчитываем ТОЛЬКО успешную выдачу
     ctx.log(f"Offline Activite: выдан код для {login} ({chat['name']})")
     return True
