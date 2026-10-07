@@ -192,6 +192,49 @@ def plugins_config(pid):
     return jsonify(ok=True)
 
 
+import os as _os
+
+def _plugin_img_dir():
+    d = _os.path.join(_os.environ.get("KASSA_DATA", "data"), "plugin_images")
+    _os.makedirs(d, exist_ok=True)
+    return d
+
+
+@app.post("/api/plugins/<pid>/image/<key>")
+def plugin_image_upload(pid, key):
+    import base64
+    body = request.get_json(force=True, silent=True) or {}
+    b64 = body.get("data_b64", "")
+    if not b64:
+        return err("Файл не получен")
+    try:
+        data = base64.b64decode(b64)
+    except Exception:
+        return err("Не удалось прочитать картинку")
+    if len(data) > 5 * 1024 * 1024:
+        return err("Картинка больше 5 МБ")
+    with open(_os.path.join(_plugin_img_dir(), f"{pid}_{key}"), "wb") as out:
+        out.write(data)
+    return jsonify(ok=True, set=True)
+
+
+@app.delete("/api/plugins/<pid>/image/<key>")
+def plugin_image_delete(pid, key):
+    path = _os.path.join(_plugin_img_dir(), f"{pid}_{key}")
+    if _os.path.exists(path):
+        _os.remove(path)
+    return jsonify(ok=True, set=False)
+
+
+@app.get("/api/plugins/<pid>/image/<key>")
+def plugin_image_get(pid, key):
+    path = _os.path.join(_plugin_img_dir(), f"{pid}_{key}")
+    if not _os.path.exists(path):
+        return err("Нет картинки", 404)
+    from flask import send_file
+    return send_file(path, mimetype="image/png")
+
+
 @app.post("/api/plugins/<pid>/test")
 def plugins_test(pid):
     try:
