@@ -17,7 +17,10 @@ import requests
 
 from . import db
 
-LICENSE_URL = os.environ.get("KASSA_LICENSE_URL", "").rstrip("/")
+# Адрес сервера лицензий зашит в код (клиент не может его стереть, чтобы включить бесплатный режим).
+# Переменная окружения может переопределить только для разработки/своего сервера.
+_DEFAULT_LICENSE_URL = "http://158.220.95.203:8900"
+LICENSE_URL = (os.environ.get("KASSA_LICENSE_URL") or _DEFAULT_LICENSE_URL).rstrip("/")
 CHECK_EVERY = 24 * 3600
 GRACE_SECONDS = 3 * 86400
 
@@ -90,8 +93,8 @@ def _public(c):
 
 
 def is_active():
-    if not LICENSE_URL:
-        return True  # сервер лицензий не настроен — подписка не требуется (режим «для себя»)
+    # Подписка обязательна всегда. Нет связи с сервером лицензий → работает только grace-период
+    # (последний успешный статус держится 3 дня), потом отключается.
     return status().get("active", False)
 
 
