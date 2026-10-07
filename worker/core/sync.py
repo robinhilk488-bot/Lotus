@@ -62,7 +62,11 @@ def sync_account(acc: dict):
             continue
         db.log(f"Новый заказ #{o['id']} от {o['buyer']}: {o['amount']:g} {o['currency']}", "order")
         notify("order", f"💰 Новый заказ #{o['id']} ({acc['name']})\n{o['description']}\n{o['buyer']} · {o['amount']:g} {o['currency']}")
-        if o["status"] != "paid":  # не выдаём по заказам, которые уже возвращены
+        # Выдаём по впервые увиденным заказам со статусом paid ИЛИ closed.
+        # closed = покупатель быстро подтвердил выполнение (между синхронизациями) — товар
+        # ещё не выдавался, его нужно выдать. От повторной выдачи защищает очередь (UNIQUE order_id).
+        # refunded/прочее — не выдаём.
+        if o["status"] not in ("paid", "closed"):
             continue
         if db.in_blacklist(o["buyer"]):
             db.log(f"Заказ #{o['id']} от {o['buyer']} из чёрного списка — автоматическая выдача не выполнялась", "warn")
