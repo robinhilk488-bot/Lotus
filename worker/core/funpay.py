@@ -217,6 +217,29 @@ class FunPayAccount:
         if resp.get("error"):
             raise FunPayError(f"FunPay не принял сообщение: {resp['error']}")
 
+    def send_image(self, chat_id, image_bytes: bytes, filename: str = "image.png"):
+        """Отправляет изображение в чат. Сначала загружает картинку, затем шлёт как сообщение."""
+        if not self.csrf:
+            self._runner([])  # обновит csrf и сессию
+        # 1) загрузка картинки — FunPay возвращает её id
+        r = self.s.post(f"{BASE}/file/addChatImage", timeout=40,
+                        headers={**XHR}, data={"csrf_token": self.csrf},
+                        files={"file": (filename, image_bytes, "image/png")})
+        if r.status_code != 200:
+            raise FunPayError(f"FunPay не принял изображение (код {r.status_code})")
+        try:
+            image_id = r.json().get("fileId") or r.json().get("imageId")
+        except ValueError:
+            raise FunPayError("FunPay вернул неожиданный ответ при загрузке изображения")
+        if not image_id:
+            raise FunPayError("FunPay не вернул id изображения")
+        # 2) отправка сообщения с картинкой
+        res = self._runner([], {"action": "chat_message",
+                                "data": {"node": chat_id, "last_message": -1, "content": "", "image_id": image_id}})
+        resp = res.get("response")
+        if not resp or resp.get("error"):
+            raise FunPayError(f"FunPay не принял изображение: {resp.get('error') if resp else 'нет ответа'}")
+
     # ---------- отзывы ----------
     def get_review(self, order_id: str) -> dict | None:
         soup = self._soup(f"/orders/{order_id}/")
