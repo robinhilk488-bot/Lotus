@@ -432,6 +432,37 @@ from core import steam as _steam  # noqa: E402
 from plugins import rent_steam as _rent  # noqa: E402
 
 
+@app.get("/api/rent/top")
+def rent_top():
+    """Топ продаж аренды за последние 30 дней: по аккаунтам, по играм, заработок."""
+    import time as _t
+    import json as _j
+    row = db.query("SELECT value FROM plugin_kv WHERE plugin_id='rent_steam' AND key='rentals'")
+    rentals = _j.loads(row[0]["value"]) if row else {}
+    since = _t.time() - 30 * 86400
+    by_acc, by_game = {}, {}
+    total = 0.0
+    cur = "₽"
+    count = 0
+    for oid, r in rentals.items():
+        if r.get("started", 0) < since:
+            continue
+        amt = float(r.get("amount") or 0)
+        total += amt
+        count += 1
+        cur = r.get("currency", cur)
+        acc = r.get("steam_login", "—")
+        game = (r.get("game") or "—").strip() or "—"
+        a = by_acc.setdefault(acc, {"account": acc, "count": 0, "sum": 0.0})
+        a["count"] += 1; a["sum"] += amt
+        g = by_game.setdefault(game, {"game": game, "count": 0, "sum": 0.0})
+        g["count"] += 1; g["sum"] += amt
+    top_acc = sorted(by_acc.values(), key=lambda x: x["count"], reverse=True)[:10]
+    top_game = sorted(by_game.values(), key=lambda x: x["count"], reverse=True)[:10]
+    return jsonify(total=round(total, 2), currency=cur, count=count,
+                   accounts=top_acc, games=top_game)
+
+
 @app.get("/api/rent/accounts")
 def rent_accounts():
     busy = {r["steam_login"]: (oid, r) for oid, r in _rent.rentals().items() if r["status"] in ("active", "changing", "needs_reset")}
@@ -447,7 +478,10 @@ def rent_accounts():
                     "extend_offer_id": a.get("extend_offer_id", ""),
                     "onlypc_check": a.get("onlypc_check", None),
                     "hide_lot_on_rent": a.get("hide_lot_on_rent", None),
-                    "review_bonus_min_hours": a.get("review_bonus_min_hours", "")})
+                    "bonus_enabled": a.get("bonus_enabled", False),
+                    "bonus_minutes": a.get("bonus_minutes", ""),
+                    "bonus_min_stars": a.get("bonus_min_stars", 5),
+                    "bonus_min_hours": a.get("bonus_min_hours", "")})
     return jsonify(out)
 
 
@@ -455,9 +489,17 @@ def _apply_rent_opts(acc, d):
     """Индивидуальные настройки аккаунта аренды. Пусто/нет = наследует общие из настроек плагина."""
     if "extend_offer_id" in d:
         acc["extend_offer_id"] = (d.get("extend_offer_id") or "").strip()
-    if "review_bonus_min_hours" in d:
-        v = d.get("review_bonus_min_hours")
-        acc["review_bonus_min_hours"] = "" if v in (None, "") else float(v)
+    # бонус за отзыв — индивидуально на аккаунт
+    if "bonus_enabled" in d:
+        acc["bonus_enabled"] = bool(d["bonus_enabled"])
+    if "bonus_minutes" in d:
+        v = d.get("bonus_minutes")
+        acc["bonus_minutes"] = "" if v in (None, "") else int(float(v))
+    if "bonus_min_stars" in d:
+        acc["bonus_min_stars"] = int(d.get("bonus_min_stars") or 5)
+    if "bonus_min_hours" in d:
+        v = d.get("bonus_min_hours")
+        acc["bonus_min_hours"] = "" if v in (None, "") else float(v)
     # bool-настройки: None = наследовать, True/False = своё значение
     for k in ("onlypc_check", "hide_lot_on_rent"):
         if k in d:
