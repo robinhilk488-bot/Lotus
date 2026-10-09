@@ -846,7 +846,7 @@ async function renderRentInto(root) {
   const statePill = a => busy(a) ? "paid" : a.state === "needs_reset" ? "refunded" : a.enabled ? "ok" : "new";
 
   root.innerHTML = `
-    <div class="page-head"><h1>Аренда Steam</h1><button class="btn primary" id="add-acc">Добавить аккаунт</button></div>
+    <div class="page-head"><h1>Аренда Steam</h1><div style="display:flex;gap:10px"><button class="btn ghost" id="rent-top">📊 Топ продаж</button><button class="btn primary" id="add-acc">Добавить аккаунт</button></div></div>
     <section class="panel row-panel ${pl?.enabled ? "" : "off"}">
       <div><h2>${pl?.enabled ? "Аренда включена" : "Аренда выключена"}</h2>
         <p class="muted">1 купленная штука = 1 час, время идёт с момента оплаты. Команды покупателя: !code, !time, ${esc(cfg.extend_command || "!продлить")}. После аренды пароль меняется автоматически (если загружен maFile), иначе аккаунт ждёт ручного сброса.</p>
@@ -931,16 +931,40 @@ async function renderRentInto(root) {
         <small class="hint">Отдельный лот «Продление» именно для этого аккаунта.</small></label>
       <div class="field"><span>Проверка OnlyPC (фото из клуба)</span>${triField("onlypc_check", a.onlypc_check)}</div>
       <div class="field"><span>Скрывать лот на время аренды</span>${triField("hide_lot_on_rent", a.hide_lot_on_rent)}</div>
-      <label class="field"><span>Час за отзыв только если куплено от, часов</span><input name="review_bonus_min_hours" type="number" value="${a.review_bonus_min_hours ?? ""}" placeholder="Пусто — общий из настроек"></label>
+    </div>
+    <div class="acc-own"><div class="acc-own-title">🎁 Бонус за отзыв</div>
+      <small class="hint" style="margin-bottom:10px;display:block">Если включено — после выдачи бот предложит покупателю оставить отзыв за бонусное продление. Оставит отзыв на нужные звёзды → аренда продлится автоматически.</small>
+      <div class="row"><div>Давать бонус за отзыв</div><label class="switch"><input type="checkbox" name="bonus_enabled" ${a.bonus_enabled ? "checked" : ""}><i></i></label></div>
+      <label class="field"><span>Сколько минут бонуса</span><input name="bonus_minutes" type="number" value="${a.bonus_minutes ?? ""}" placeholder="Например: 60 = 1 час, 90 = 1.5 часа">
+        <small class="hint">60 минут = 1 час продления, 120 = 2 часа.</small></label>
+      <label class="field"><span>Минимум звёзд для бонуса</span><input name="bonus_min_stars" type="number" min="1" max="5" value="${a.bonus_min_stars ?? 5}" placeholder="5"></label>
+      <label class="field"><span>Предлагать бонус, только если куплено от, часов</span><input name="bonus_min_hours" type="number" value="${a.bonus_min_hours ?? ""}" placeholder="Пусто — всегда. Например: 3">
+        <small class="hint">Если 3 — покупатель, взявший меньше 3 часов, предложение бонуса не получит.</small></label>
     </div>`;
 
   const tri = v => v === "" ? null : v === "1";
+  $("#rent-top").onclick = async () => {
+    let d;
+    try { d = await api("GET", "/api/rent/top"); } catch (e) { toast(e.message, true); return; }
+    const row = (x, name) => `<tr><td>${esc(name)}</td><td class="nowrap">${x.count} раз</td><td class="nowrap">${nf.format(Math.round(x.sum))} ${esc(d.currency)}</td></tr>`;
+    const body = `
+      <h2>📊 Топ продаж за 30 дней</h2>
+      <div class="top-earn">Заработано за месяц: <b>${nf.format(Math.round(d.total))} ${esc(d.currency)}</b> · аренд: ${d.count}</div>
+      <h3 class="top-h">🎮 По играм (что берут чаще)</h3>
+      ${d.games.length ? `<table class="top-table"><tbody>${d.games.map(g => row(g, g.game)).join("")}</tbody></table>` : `<p class="muted">Пока нет данных.</p>`}
+      <h3 class="top-h">🔑 По аккаунтам</h3>
+      ${d.accounts.length ? `<table class="top-table"><tbody>${d.accounts.map(a => row(a, a.account)).join("")}</tbody></table>` : `<p class="muted">Пока нет данных.</p>`}`;
+    modal(body, null);
+  };
   $("#add-acc").onclick = () => modal(`<h2>Новый аккаунт для аренды</h2>${accForm()}`, "Добавить", async f => {
     await api("POST", "/api/rent/accounts", {
       title: f.title.value, login: f.login.value, password: f.password.value, mafile: f.mafile.value, offer_id: f.offer_id.value,
       extend_offer_id: f.extend_offer_id.value, onlypc_check: tri(f.onlypc_check.value),
       hide_lot_on_rent: tri(f.hide_lot_on_rent.value),
-      review_bonus_min_hours: f.review_bonus_min_hours.value === "" ? "" : Number(f.review_bonus_min_hours.value),
+      bonus_enabled: f.bonus_enabled.checked,
+      bonus_minutes: f.bonus_minutes.value === "" ? "" : Number(f.bonus_minutes.value),
+      bonus_min_stars: Number(f.bonus_min_stars.value || 5),
+      bonus_min_hours: f.bonus_min_hours.value === "" ? "" : Number(f.bonus_min_hours.value),
     });
     toast("Аккаунт добавлен"); reopenRent();
   });
@@ -955,7 +979,10 @@ async function renderRentInto(root) {
       body.extend_offer_id = f.extend_offer_id.value;
       body.onlypc_check = tri(f.onlypc_check.value);
       body.hide_lot_on_rent = tri(f.hide_lot_on_rent.value);
-      body.review_bonus_min_hours = f.review_bonus_min_hours.value === "" ? "" : Number(f.review_bonus_min_hours.value);
+      body.bonus_enabled = f.bonus_enabled.checked;
+      body.bonus_minutes = f.bonus_minutes.value === "" ? "" : Number(f.bonus_minutes.value);
+      body.bonus_min_stars = Number(f.bonus_min_stars.value || 5);
+      body.bonus_min_hours = f.bonus_min_hours.value === "" ? "" : Number(f.bonus_min_hours.value);
       await api("PUT", `/api/rent/accounts/${encodeURIComponent(a.login)}`, body); toast("Сохранено"); reopenRent();
     });
   }));
@@ -1223,7 +1250,7 @@ function modal(html, okText, onOk) {
   const root = $("#modal-root");
   root.innerHTML = `<div class="overlay"><form class="modal" novalidate>${html}
     <p class="error" hidden></p>
-    <div class="modal-actions"><button type="button" class="btn ghost" data-close>Отмена</button><button class="btn primary">${okText}</button></div></form></div>`;
+    <div class="modal-actions"><button type="button" class="btn ghost" data-close>${okText == null ? "Закрыть" : "Отмена"}</button>${okText == null ? "" : `<button class="btn primary">${okText}</button>`}</div></form></div>`;
   const form = $("form", root), err = $(".error", form), ok = $(".btn.primary", form);
   const onKey = e => { if (e.key === "Escape") close(); };
   const close = () => { document.removeEventListener("keydown", onKey); root.innerHTML = ""; };
@@ -1239,7 +1266,7 @@ function modal(html, okText, onOk) {
   });
   // Escape слушаем точечно и только на всплытии, чтобы не перехватывать ввод в полях (важно для QtWebEngine)
   document.addEventListener("keydown", onKey);
-  form.onsubmit = async e => {
+  if (ok) form.onsubmit = async e => {
     e.preventDefault();
     ok.disabled = true; err.hidden = true;
     try { if ((await onOk(form)) !== "keep") close(); }
