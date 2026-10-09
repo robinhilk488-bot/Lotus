@@ -491,3 +491,12 @@ td .switch { display: inline-block; }
 .pdetail-actions .btn { flex: 1; }
 
 @media (max-width: 1100px) { .pcatalog { grid-template-columns: 1fr; } .pdetail { position: static; } }
+
+/* Топ продаж аренды */
+.top-earn { background: var(--gold-dim); border-radius: var(--r-sm); padding: 12px 16px; margin-bottom: 8px; font-size: 14px; }
+.top-earn b { color: var(--gold); font-family: var(--display); font-size: 17px; }
+.top-h { font-family: var(--display); font-size: 14px; margin: 16px 0 8px; }
+.top-table { width: 100%; border-collapse: collapse; }
+.top-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.top-table td:first-child { font-weight: 600; }
+.top-table td:not(:first-child) { color: var(--muted); text-align: right; }
