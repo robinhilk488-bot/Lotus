@@ -45,13 +45,16 @@ SETTINGS = [
     {"key": "no_rent_text", "label": "Если аренды нет", "type": "text", "default": "У вас нет активной аренды."},
     {"key": "remind_text", "label": "Напоминание перед концом", "type": "text", "default": "До конца аренды 15 минут. Продлить: !продлить"},
     {"key": "end_text", "label": "Конец аренды", "type": "text", "default": "Аренда окончена, спасибо! Доступ к аккаунту закрыт."},
-    {"key": "review_bonus_text", "label": "Спасибо за отзыв", "type": "text", "default": "Спасибо за отзыв! +1 час, аренда до {until}."},
+    {"key": "review_offer_text", "label": "Предложение бонуса за отзыв", "type": "textarea",
+     "default": "Поставьте {stars} звёзд и получите +{bonus} бесплатно! Бонус начислится автоматически после отзыва.",
+     "hint": "Бот пишет это после выдачи, если на аккаунте включён бонус. {stars} — нужные звёзды, {bonus} — сколько времени бонуса."},
+    {"key": "review_bonus_text", "label": "После начисления бонуса", "type": "text",
+     "default": "Спасибо за отзыв! Бонус начислен, аренда продлена до {until}.",
+     "hint": "{until} — новое время окончания, {bonus} — сколько добавлено."},
     {"key": "extend_offer_id", "label": "ID лота продления на FunPay", "type": "text", "required": True,
      "hint": "Создайте отдельный лот «Продление аренды», держите его выключенным. ID — число из ссылки offer?id=... на лот."},
     {"key": "extend_command", "label": "Команда продления", "type": "text", "default": "!продлить"},
     {"key": "remind_before_min", "label": "Напоминать за, минут", "type": "number", "default": 15},
-    {"key": "review_bonus_min_hours", "label": "Час за отзыв только если куплено от, часов", "type": "number", "default": 2,
-     "hint": "Чтобы не дарить час за отзыв тем, кто взял аренду всего на час. 0 — давать всегда."},
     {"key": "hide_lot_on_rent", "label": "Скрывать лот аккаунта на время аренды", "type": "bool", "default": True,
      "hint": "Если указан ID лота у аккаунта, он прячется на время аренды, чтобы не купили занятый. Выключите, если лот один на несколько аккаунтов."},
     {"key": "onlypc_check", "label": "Проверка OnlyPC (фото из клуба)", "type": "bool", "default": False,
@@ -134,6 +137,46 @@ def _acc_opt(acc, key, cfg, default=None):
     return cfg.get(key, default)
 
 
+def _lot_name_cache():
+    return _kv("lot_names", {})
+
+
+def _lot_name(ctx, account_id, offer_id):
+    """Название лота по его ID (кэшируется, чтобы не дёргать FunPay каждый раз)."""
+    offer_id = str(offer_id).strip()
+    cache = _lot_name_cache()
+    hit = cache.get(offer_id)
+    # кэш живёт 1 час — если переименуешь лот, бот узнает новое название в течение часа
+    if hit and (time.time() - hit.get("ts", 0) < 3600):
+        return hit["name"]
+    try:
+        info = ctx.lot_info(account_id, offer_id)
+        name = (info.get("title") or "").strip()
+    except Exception:
+        name = hit["name"] if hit else ""  # при ошибке берём старое из кэша
+    cache[offer_id] = {"name": name, "ts": time.time()}
+    _kv_set("lot_names", cache)
+    return name
+
+
+def _account_for_order(order, ctx):
+    """Находит аккаунт, чей привязанный лот совпадает с товаром заказа.
+    Возвращает аккаунт (dict) или ctx.SKIP, если заказ не относится к аренде.
+    Если НИ У ОДНОГО аккаунта не заполнен offer_id — старое поведение (берём все заказы)."""
+    accs = steam_accounts()
+    bound = [a for a in accs if (a.get("offer_id") or "").strip()]
+    if not bound:
+        return None  # привязок нет — плагин работает как раньше (по типам/всем заказам)
+    desc = (order.get("description") or "").strip().lower()
+    if not desc:
+        return ctx.SKIP
+    for a in bound:
+        lot = _lot_name(ctx, order["account_id"], a["offer_id"]).lower()
+        if lot and (lot in desc or desc in lot):
+            return a
+    return ctx.SKIP  # ни один привязанный лот не совпал — не наш заказ
+
+
 def _free_account(acc_type=None):
     busy = {r["steam_login"] for r in rentals().values() if r["status"] in ("active", "changing")}
     for a in steam_accounts():
@@ -153,6 +196,14 @@ def on_new_order(order, ctx):
     key = f"{order['account_id']}:{order['buyer'].lower()}"
     if key in pend:
         return _apply_extension(order, ctx, pend, key)
+
+    # Привязка по лоту: берём заказ, ТОЛЬКО если его товар совпадает с лотом,
+    # ID которого вписан в один из аккаунтов аренды (поле offer_id). Так плагин
+    # не трогает чужие заказы (продажи, автовыдачу) — у них нет привязанного лота.
+    matched = _account_for_order(order, ctx)
+    if matched is ctx.SKIP:
+        ctx.log(f"Заказ #{order['id']} не привязан к лотам аренды, пропускаю")
+        return ctx.SKIP
 
     hours = ctx.order_quantity(order)
     if not hours:
@@ -174,6 +225,8 @@ def on_new_order(order, ctx):
         p = _kv("pending_photo", {})
         p[order["id"]] = {"buyer": order["buyer"], "buyer_id": order.get("buyer_id"),
                           "account_id": order["account_id"], "hours": hours, "acc_type": acc_type,
+                          "amount": order.get("amount", 0), "currency": order.get("currency", "₽"),
+                          "description": order.get("description", ""),
                           "chat_id": None, "created": time.time(), "reminded": False, "got_photo": False}
         _kv_set("pending_photo", p)
         try:
@@ -184,7 +237,7 @@ def on_new_order(order, ctx):
         return "Ожидает фото OnlyPC"
 
     return _issue_account(order["id"], order["buyer"], order.get("buyer_id"),
-                          order["account_id"], hours, ctx, acc_type)
+                          order["account_id"], hours, ctx, acc_type, order=order)
 
 
 def _in_whitelist(buyer_id, cfg):
@@ -198,7 +251,7 @@ def _in_whitelist(buyer_id, cfg):
     return str(buyer_id) in ids
 
 
-def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx, acc_type=None):
+def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx, acc_type=None, order=None):
     acc = _free_account(acc_type)
     if not acc:
         t = f" типа «{acc_type}»" if acc_type else ""
@@ -216,6 +269,8 @@ def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx, acc_type=N
         "until": until, "hours": hours, "reminded": False, "review_bonus": False, "started": time.time(),
         "offer_id": acc.get("offer_id", ""),
         "extend_offer_id": _acc_opt(acc, "extend_offer_id", ctx.config, ""),
+        "amount": (order or {}).get("amount", 0), "currency": (order or {}).get("currency", "₽"),
+        "game": acc.get("title") or (order or {}).get("description", "")[:60],
     }
     save_rentals(r)
     if _acc_opt(acc, "hide_lot_on_rent", ctx.config, True) and acc.get("offer_id"):
@@ -225,6 +280,16 @@ def _issue_account(order_id, buyer, buyer_id, account_id, hours, ctx, acc_type=N
             ctx.log(f"не удалось скрыть лот {acc['offer_id']}: {e}", "warn")
     _nm = f"{acc.get('title')} ({acc['login']})" if acc.get("title") else acc["login"]
     db.log(f"Аренда #{order_id}: выдан {_nm} на {hours} ч (до {_hm(until)})", "order")
+
+    # предложение бонуса за отзыв — если на этом аккаунте включено и условия подходят
+    enabled, minutes, min_stars, min_hours = _bonus_cfg(acc)
+    if enabled and (not min_hours or hours >= min_hours) and buyer_id and ctx.config.get("review_offer_text", "").strip():
+        try:
+            with accounts.use(account_id) as fp:
+                fp.send_message(fp.chat_with(buyer_id),
+                                _fill(ctx.config["review_offer_text"], stars=min_stars, bonus=_fmt_dur(minutes)))
+        except Exception as e:
+            ctx.log(f"не удалось отправить предложение бонуса: {e}", "warn")
     return f"Аренда до {_hm(until)}"
 
 
@@ -319,12 +384,31 @@ def on_message(msg, chat, ctx):
 
 
 # ---------------- отзыв (5★ во время аренды, один раз) ----------------
+def _bonus_cfg(acc):
+    """Настройки бонуса за отзыв у аккаунта. Возвращает (включён, минуты, мин_звёзд, мин_часов)."""
+    if not acc:
+        return (False, 0, 5, 0)
+    enabled = bool(acc.get("bonus_enabled"))
+    minutes = int(acc.get("bonus_minutes") or 0)
+    stars = int(acc.get("bonus_min_stars") or 5)
+    min_hours = float(acc.get("bonus_min_hours") or 0)
+    return (enabled and minutes > 0, minutes, stars, min_hours)
+
+
+def _fmt_dur(minutes):
+    """60 → «1 час», 90 → «1 час 30 минут», 30 → «30 минут»."""
+    h, m = divmod(int(minutes), 60)
+    parts = []
+    if h:
+        parts.append(f"{h} ч")
+    if m:
+        parts.append(f"{m} мин")
+    return " ".join(parts) or "0 мин"
+
+
 def on_review(review, ctx):
-    if review["rating"] != 5:
-        return
     r = rentals()
     rent = r.get(review["order_id"])
-    # отзыв может быть к продлению — ищем исходную аренду того же покупателя
     if not rent:
         oid, rent = _active_rental_for(review["buyer"], review["account_id"])
     else:
@@ -333,19 +417,23 @@ def on_review(review, ctx):
         return
     if rent.get("review_bonus"):
         return  # бонус за эту аренду уже был
-    _bacc = next((a for a in steam_accounts() if a["login"] == rent.get("steam_login")), None)
-    min_hours = float(_acc_opt(_bacc, "review_bonus_min_hours", ctx.config, 0) or 0)
+    acc = next((a for a in steam_accounts() if a["login"] == rent.get("steam_login")), None)
+    enabled, minutes, min_stars, min_hours = _bonus_cfg(acc)
+    if not enabled:
+        return  # бонус на этом аккаунте выключен
+    if (review.get("rating") or 0) < min_stars:
+        return  # оценка ниже нужной
     if min_hours and rent.get("hours", 0) < min_hours:
-        return  # куплено слишком мало часов — бонус не положен
+        return  # куплено меньше нужного — бонус не положен
     rent["review_bonus"] = True
-    rent["until"] += 3600
+    rent["until"] += minutes * 60
     rent["reminded"] = False
     r[oid] = rent
     save_rentals(r)
     if rent.get("chat_id"):
         ctx.reply({"id": rent["chat_id"], "account_id": rent["account_id"]},
-                  _fill(ctx.config["review_bonus_text"], until=_hm(rent["until"])))
-    db.log(f"Аренда #{oid}: +1 час за отзыв (до {_hm(rent['until'])})", "order")
+                  _fill(ctx.config["review_bonus_text"], until=_hm(rent["until"]), bonus=_fmt_dur(minutes)))
+    db.log(f"Аренда #{oid}: +{_fmt_dur(minutes)} за отзыв (до {_hm(rent['until'])})", "order")
 
 
 # ---------------- таймер: напоминания, окончание, чистка продлений ----------------
@@ -478,7 +566,8 @@ def onlypc_decide(order_id, approve, ctx):
     _kv_set("pending_photo", photos)
     if approve:
         return _issue_account(order_id, job["buyer"], job.get("buyer_id"),
-                              job["account_id"], job["hours"], ctx, job.get("acc_type"))
+                              job["account_id"], job["hours"], ctx, job.get("acc_type"),
+                              order={"amount": job.get("amount", 0), "currency": job.get("currency", "₽"), "description": job.get("description", "")})
     if job.get("buyer_id"):
         try:
             with accounts.use(job["account_id"]) as fp:
