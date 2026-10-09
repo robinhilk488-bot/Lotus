@@ -254,6 +254,9 @@ const Demo = (() => {
       if (p === "/api/raise" && method === "GET") return { data: [{ account: "Основной", ts: now - 1800, report: ["Предложения подняты."] }, { account: "Скины", ts: now - 1800, report: ["Подождите 2 часа."] }] };
       if (p === "/api/raise") return { "Основной": ["Подождите 1 час."], "Скины": ["Подождите 1 час."] };
       if (p === "/api/chats") return { data: chats };
+      if (p === "/api/rent/top") return { data: { total: 4820, currency: "₽", count: 37,
+        games: [{game:"CS2 Prime 2000ч",count:18,sum:2140},{game:"Dota 2 Калибровка",count:12,sum:1680},{game:"GTA 5 Online",count:7,sum:1000}],
+        accounts: [{account:"csgo_rent_01",count:11,sum:1320},{account:"csgo_rent_02",count:9,sum:1080},{account:"dota_rent_01",count:8,sum:1120}] } };
       if (p.startsWith("/api/chats/")) {
         const id = decodeURIComponent(p.split("/")[4]);
         const list = msgs[id] ||= [{ id: 1, author_id: 503, text: chats.find(c => c.chat_id === id)?.last_text || "", ts: now - 600, mine: 0 }];
