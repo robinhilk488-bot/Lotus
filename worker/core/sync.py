@@ -39,8 +39,8 @@ def sync_account(acc: dict):
     if acc["status"] == "error":
         db.log(f"{acc['name']}: снова работает")
         notify("account", f"✅ Аккаунт «{acc['name']}» снова работает")
-    db.execute("UPDATE accounts SET user_id=?, username=?, balance=?, currency=?, status='ok', error=NULL, last_sync=? WHERE id=?",
-               (me["user_id"], me["username"], me["balance"], me["currency"], time.time(), acc["id"]))
+    db.execute("UPDATE accounts SET user_id=?, username=?, balance=?, currency=?, avatar=?, status='ok', error=NULL, last_sync=? WHERE id=?",
+               (me["user_id"], me["username"], me["balance"], me["currency"], me.get("avatar", ""), time.time(), acc["id"]))
     first_sync = acc["last_sync"] is None
 
     for o in sales:
