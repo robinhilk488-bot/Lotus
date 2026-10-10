@@ -118,6 +118,11 @@ CREATE TABLE IF NOT EXISTS events (
 with _lock:
     _conn.executescript(SCHEMA)
     _conn.commit()
+    # миграции: добавляем новые столбцы, если их ещё нет (безопасно для старых баз)
+    _cols = {r[1] for r in _conn.execute("PRAGMA table_info(accounts)").fetchall()}
+    if "proxy" not in _cols:
+        _conn.execute("ALTER TABLE accounts ADD COLUMN proxy TEXT DEFAULT ''")
+        _conn.commit()
 
 
 def query(sql, params=()):
