@@ -160,43 +160,75 @@ async function go(page) {
 }
 
 // ---------- график ----------
-function drawChart(el, daily) {
-  const W = el.clientWidth || 700, H = el.clientHeight || 240, padB = 24, padL = 46;
+function drawChart(el, daily, onPick) {
+  const W = el.clientWidth || 700, H = el.clientHeight || 260, padB = 26, padL = 46, padT = 10;
   const max = Math.max(1, ...daily.map(d => d.revenue));
   const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), nrm = raw / mag;
   const tick = (nrm <= 1 ? 1 : nrm <= 2 ? 2 : nrm <= 2.5 ? 2.5 : nrm <= 5 ? 5 : 10) * mag;
   const ticks = Math.ceil(max / tick), top = ticks * tick;
-  const n = daily.length, step = (W - padL) / n, bw = Math.max(2, step * 0.62);
-  const y = v => (H - padB) * (1 - v / top);
+  const n = daily.length, step = (W - padL) / (n - 1 || 1);
+  const x = i => padL + i * step;
+  const y = v => padT + (H - padB - padT) * (1 - v / top);
   const labelEvery = Math.ceil(n / 8);
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Выручка по дням">`;
+  const pts = daily.map((d, i) => [x(i), y(d.revenue)]);
+
+  // гладкая кривая (Catmull-Rom → Bézier) — плавные волны, как у Pulse
+  const smooth = p => {
+    if (p.length < 2) return "";
+    let d = `M${p[0][0]},${p[0][1]}`;
+    for (let i = 0; i < p.length - 1; i++) {
+      const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
+    }
+    return d;
+  };
+  const line = smooth(pts);
+  const area = line + ` L${pts[pts.length - 1][0]},${H - padB} L${pts[0][0]},${H - padB} Z`;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Выручка по дням" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#C77DFF" stop-opacity=".35"/>
+        <stop offset="100%" stop-color="#C77DFF" stop-opacity="0"/>
+      </linearGradient>
+      <filter id="lineGlow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>`;
   for (let i = 0; i <= ticks; i++) {
     const v = tick * i, yy = y(v);
     svg += `<line class="gridline" x1="${padL}" x2="${W}" y1="${yy}" y2="${yy}"/>`;
     svg += `<text class="axis" x="${padL - 8}" y="${yy + 4}" text-anchor="end">${v >= 1000 ? nf.format(v / 1000) + "к" : nf.format(v)}</text>`;
   }
+  svg += `<path d="${area}" fill="url(#areaGrad)"/>`;
+  svg += `<path d="${line}" fill="none" stroke="#C77DFF" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#lineGlow)"/>`;
+  // точки + подписи дат + зоны наведения
   daily.forEach((d, i) => {
-    const x = padL + i * step + (step - bw) / 2;
-    const h = Math.max(2, (H - padB) - y(d.revenue));
-    svg += `<g data-i="${i}"><rect class="hit" x="${padL + i * step}" y="0" width="${step}" height="${H - padB}"/>`;
-    svg += `<rect class="bar${d.revenue ? "" : " empty"}" x="${x}" y="${H - padB - h}" width="${bw}" height="${h}" rx="${Math.min(3, bw / 2)}"/></g>`;
+    svg += `<circle class="dot-pt" cx="${x(i)}" cy="${y(d.revenue)}" r="0"/>`;
     if ((i % labelEvery === 0 && n - 1 - i >= labelEvery / 2) || i === n - 1) {
       const dt = new Date(d.date + "T00:00");
-      svg += `<text class="axis" x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${dt.getDate()}.${String(dt.getMonth() + 1).padStart(2, "0")}</text>`;
+      svg += `<text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="middle">${dt.getDate()}.${String(dt.getMonth() + 1).padStart(2, "0")}</text>`;
     }
+    svg += `<rect class="hit" data-i="${i}" x="${x(i) - step / 2}" y="0" width="${step}" height="${H - padB}" fill="transparent"/>`;
   });
-  el.innerHTML = svg + "</svg><div class='tip' hidden></div>";
-  const tip = $(".tip", el);
-  el.querySelectorAll("g[data-i]").forEach(g => {
-    g.onmouseenter = () => {
-      const d = daily[+g.dataset.i], r = g.querySelector(".bar");
+  el.innerHTML = svg + `</svg><div class="tip" hidden></div>`;
+  const tip = $(".tip", el), dots = el.querySelectorAll(".dot-pt");
+  el.querySelectorAll(".hit").forEach(hit => {
+    const i = +hit.dataset.i, d = daily[i], c = dots[i];
+    hit.onmouseenter = () => {
+      c.setAttribute("r", "4");
       const dt = new Date(d.date + "T00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
       tip.innerHTML = `${dt}<br><b>${money(d.revenue)}</b> · ${d.orders} зак.`;
-      tip.style.left = (+r.getAttribute("x") + +r.getAttribute("width") / 2) / W * el.clientWidth + "px";
-      tip.style.top = Math.max(40, +r.getAttribute("y") - 6) + "px";
+      tip.style.left = x(i) / W * el.clientWidth + "px";
+      tip.style.top = Math.max(30, y(d.revenue) - 10) + "px";
       tip.hidden = false;
     };
-    g.onmouseleave = () => (tip.hidden = true);
+    hit.onmouseleave = () => { c.setAttribute("r", "0"); tip.hidden = true; };
+    if (onPick) hit.onclick = () => {
+      dots.forEach(dd => dd.classList.remove("sel"));
+      c.classList.add("sel"); c.setAttribute("r", "5");
+      onPick(d);
+    };
   });
 }
 
@@ -222,32 +254,133 @@ pages.dashboard = async root => {
   const split = accs.map((a, i) => `<span style="flex:${Math.max(a.balance, total * .02)};background:${ACC_COLORS[i % 6]}"></span>`).join("");
   const legend = accs.map((a, i) => `<span><i style="background:${ACC_COLORS[i % 6]}"></i>${esc(a.name)} <b>${money(a.balance, a.currency)}</b></span>`).join("");
 
+  // приветствие по времени суток
+  const h = new Date().getHours();
+  const greet = h < 5 ? "Доброй ночи" : h < 12 ? "Доброе утро" : h < 18 ? "Добрый день" : "Добрый вечер";
+  const dateStr = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+
+  // состояние аккаунтов
+  const okAccs = accs.filter(a => a.status === "ok").length;
+  const errAccs = accs.filter(a => a.status === "error");
+  const allOk = accs.length > 0 && errAccs.length === 0;
+
+  // метрики за 30 дней
+  const avgDay = cur.length ? rev / cur.length : 0;
+  const best = cur.reduce((m, d) => d.revenue > (m?.revenue || 0) ? d : m, null);
+  const bestDate = best && best.revenue > 0 ? new Date(best.date || Date.now()).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "—";
+
+  // умная плашка статуса системы
+  const statusBanner = errAccs.length
+    ? `<a class="hc-banner warn" onclick="go('accounts')"><div class="hc-icon">${ICON.warn}</div><div><b>Аккаунт требует внимания</b><div class="muted small">${esc(errAccs[0].name)}: ${esc(errAccs[0].error || "ошибка подключения")}</div></div><span class="hc-arrow">Проверить ${ICON.arrow}</span></a>`
+    : state.sub && state.sub.configured && !state.sub.active
+    ? `<a class="hc-banner warn" onclick="go('subscription')"><div class="hc-icon">${ICON.warn}</div><div><b>Подписка неактивна</b><div class="muted small">Плагины по подписке остановлены. Продлите подписку — они запустятся сами.</div></div><span class="hc-arrow">Открыть ${ICON.arrow}</span></a>`
+    : allOk
+    ? `<div class="hc-banner ok"><div class="hc-icon">${ICON.check}</div><div><b>Всё работает</b><div class="muted small">Заказы с FunPay проверяются вовремя · ${okAccs} из ${accs.length} аккаунтов готовы</div></div></div>`
+    : "";
+
+  // «готовность» в процентах — как у Pulse (круговой индикатор)
+  const readyPct = accs.length ? Math.round(okAccs / accs.length * 100) : 0;
+
   root.innerHTML = `
-    <div class="page-head"><h1>Сводка</h1><button class="btn" id="sync">Обновить данные</button></div>
-    ${state.attention ? `<a class="banner" onclick="go('plugins')"><b>Заказов требуют проверки: ${state.attention}.</b> Плагин не довёл их до конца. Откройте, чтобы решить, что с ними делать.</a>` : ""}
-    <div class="hero">
-      <section class="panel">
-        <div class="balance-label">Баланс на ${accs.length} ${accs.length === 1 ? "аккаунте" : "аккаунтах"}</div>
-        <div class="balance">${nf.format(Math.round(total))}<small>₽</small></div>
-        ${accs.length ? `<div class="split">${split}</div><div class="legend">${legend}</div>`
-                      : `<p class="muted" style="margin-top:16px">Добавьте аккаунт FunPay, чтобы здесь появился баланс.</p>`}
-      </section>
-      <section class="panel figures">
-        <div class="figure"><span class="muted">Выручка за 30 дней</span><span><span class="v">${money(rev)}</span>${pct(rev, revP)}</span></div>
-        <div class="figure"><span class="muted">Чистая прибыль за 30 дней</span><span><span class="v profit">${money(Math.round(prof))}</span>${pct(prof, profP)}</span></div>
-        <div class="figure"><span class="muted">Заказов за 30 дней</span><span><span class="v">${ord}</span>${pct(ord, ordP)}</span></div>
-        <div class="figure"><span class="muted">Сегодня</span><span class="v">${money(today?.revenue)} <span class="muted small">${today?.orders || 0} зак.</span></span></div>
-      </section>
+    <div class="dash-head">
+      <div><div class="muted small" style="text-transform:capitalize;margin-bottom:6px">${esc(dateStr)}</div>
+        <h1 class="dash-greet">${greet}!</h1>
+        <div class="muted small">${today?.orders ? `Сегодня продаж: ${today.orders} на ${money(today.revenue)}` : "Сегодня продаж пока нет"}</div></div>
+      <button class="btn" id="sync"><span class="btn-ic">${ICON.sync}</span>Обновить данные</button>
     </div>
-    <div class="grid-2">
-      <section class="panel"><div class="panel-head"><h2>Выручка по дням</h2><span class="muted small">последние 30 дней</span></div><div class="chart" id="chart"></div></section>
-      <section class="panel"><div class="panel-head"><h2>Журнал</h2></div>
-        <ul class="log">${evs.slice(0, 30).map(e => `<li class="${e.level}"><time>${hhmm(e.ts)}</time><span class="${e.level}">${esc(e.text)}</span></li>`).join("") || `<li><span class="muted">Событий пока нет</span></li>`}</ul>
+
+    ${state.attention ? `<a class="banner" onclick="go('plugins')"><b>Заказов требуют проверки: ${state.attention}.</b> Плагин не довёл их до конца. Откройте, чтобы решить, что с ними делать.</a>` : ""}
+
+    <!-- широкая плашка-статус, как у Pulse -->
+    <div class="hero-status ${errAccs.length ? "warn" : "ok"}">
+      <div class="hs-icon">${errAccs.length ? ICON.warn : ICON.check}</div>
+      <div class="hs-text">
+        <b>${errAccs.length ? "Аккаунт требует внимания" : "Все аккаунты готовы к работе"}</b>
+        <div class="muted small">${errAccs.length ? `${esc(errAccs[0].name)}: ${esc(errAccs[0].error || "ошибка подключения")}` : "Заказы с FunPay проверяются вовремя · плагины и прокси в норме"}</div>
+      </div>
+      <button class="hs-btn" onclick="go('${errAccs.length ? "accounts" : "plugins"}')">${errAccs.length ? "Проверить" : "Плагины"} ${ICON.arrow}</button>
+    </div>
+
+    <!-- 4 карточки метрик, как у Pulse -->
+    <div class="metrics">
+      <div class="metric"><div class="metric-head"><span class="metric-ic sky">${ICON.chart}</span><span class="metric-l">Сегодня</span></div>
+        <div class="metric-v">${money(today?.revenue || 0)}</div><div class="metric-s muted">${today?.orders ? today.orders + " " + plural(today.orders, "заказ", "заказа", "заказов") : "продаж пока нет"}</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic gold">${ICON.wallet}</span><span class="metric-l">Баланс</span></div>
+        <div class="metric-v neon">${nf.format(Math.round(total))} ₽</div><div class="metric-s muted">на аккаунтах FunPay: ${accs.length}</div></div>
+      <div class="metric metric-ring"><div class="metric-head"><span class="metric-ic mint">${ICON.users}</span><span class="metric-l">Готовность</span></div>
+        <div class="ring-row">
+          <svg class="ring" viewBox="0 0 44 44"><circle class="ring-bg" cx="22" cy="22" r="18"/><circle class="ring-fg" cx="22" cy="22" r="18" stroke-dasharray="${2 * Math.PI * 18}" stroke-dashoffset="${2 * Math.PI * 18 * (1 - readyPct / 100)}"/></svg>
+          <div><div class="metric-v" style="font-size:22px">${readyPct}%</div><div class="metric-s muted">${okAccs} из ${accs.length} готовы</div></div>
+        </div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic neon-ic">${ICON.bolt}</span><span class="metric-l">Прибыль 30д</span></div>
+        <div class="metric-v mint">${money(Math.round(prof))}</div><div class="metric-s">${pct(prof, profP)}</div></div>
+    </div>
+
+    <!-- большой блок: график + выбранный день справа, как у Pulse -->
+    <div class="dash-chart-row">
+      <section class="panel">
+        <div class="panel-head"><h2>${ICON.trend} Выручка за 30 дней</h2><span class="muted small">только завершённые заказы</span></div>
+        <div class="chart-metrics">
+          <div class="cm"><span class="cm-l">Выручка</span><span class="cm-v neon">${money(rev)}</span></div>
+          <div class="cm"><span class="cm-l">Заказов</span><span class="cm-v">${ord}</span></div>
+          <div class="cm"><span class="cm-l">В среднем в день</span><span class="cm-v">${money(Math.round(avgDay))}</span></div>
+          <div class="cm"><span class="cm-l">Лучший день</span><span class="cm-v">${bestDate} <span class="muted small">${best && best.revenue ? money(best.revenue) : ""}</span></span></div>
+        </div>
+        <div class="chart" id="chart"></div>
       </section>
-    </div>`;
-  drawChart($("#chart"), cur);
+      <aside class="panel day-panel">
+        <div class="muted small" style="letter-spacing:.06em">ВЫБРАННЫЙ ДЕНЬ</div>
+        <div class="day-pill" id="day-pill"><span class="dot ok"></span>Сегодня</div>
+        <div class="day-date" id="day-date">${new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}</div>
+        <div class="day-rev-box"><div class="muted small">Выручка на дату</div><div class="day-rev neon" id="day-rev">${money(today?.revenue || 0)}</div></div>
+        <div class="day-row"><span class="muted">Заказов</span><b id="day-ord">${today?.orders || 0}</b></div>
+        <div class="day-row"><span class="muted">Средний чек</span><b id="day-avg">${today?.orders ? money(Math.round(today.revenue / today.orders)) : "—"}</b></div>
+        <div class="day-row"><span class="muted">Доля выручки за 30 дней</span><b id="day-share">${rev ? Math.round((today?.revenue || 0) / rev * 100) : 0}%</b></div>
+        <div class="muted small" style="margin-top:14px">Нажмите на день на графике, чтобы увидеть детали.</div>
+      </aside>
+    </div>
+
+    <!-- готовность аккаунтов -->
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>${ICON.users} Готовность аккаунтов</h2>${allOk ? `<span class="pill closed">Все готовы</span>` : accs.length ? `<span class="pill refunded">${errAccs.length} с ошибкой</span>` : ""}</div>
+      ${accs.length ? `
+        <div class="ready-bar"><span style="width:${readyPct}%"></span></div>
+        <div class="muted small" style="margin:8px 0 16px">${okAccs} / ${accs.length} готовы</div>
+        <div class="ready-grid">${accs.map((a, i) => `
+          <div class="ready-item">
+            <div class="avatar sm" style="background:${ACC_COLORS[i % 6]}">${esc((a.username || a.name)[0].toUpperCase())}</div>
+            <div class="ready-info"><b>${esc(a.name)}</b><div class="muted small">${a.status === "ok" ? "Готов к работе" : esc(a.error || "ошибка")}</div></div>
+            <span class="dot ${a.status === "ok" ? "ok" : "err"}"></span>
+          </div>`).join("")}</div>`
+      : `<div class="empty-mini"><div class="empty-ic">${ICON.users}</div><p class="muted">Аккаунтов пока нет. Добавьте аккаунт FunPay, чтобы начать.</p><button class="btn primary" onclick="go('accounts')">Добавить аккаунт</button></div>`}
+    </section>
+
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>Журнал</h2><span class="muted small">последние события</span></div>
+      <ul class="log">${evs.slice(0, 20).map(e => `<li class="${e.level}"><time>${hhmm(e.ts)}</time><span class="${e.level}">${esc(e.text)}</span></li>`).join("") || `<li><span class="muted">Событий пока нет — здесь появятся заказы, выдачи и ошибки.</span></li>`}</ul>
+    </section>`;
+
+  // клик по дню на графике обновляет панель «выбранный день»
+  drawChart($("#chart"), cur, d => {
+    if (!d) return;
+    $("#day-pill").innerHTML = `<span class="dot ${d.revenue > 0 ? "ok" : ""}"></span>${d.revenue > 0 ? "Подтверждено" : "Нет продаж"}`;
+    $("#day-date").textContent = new Date(d.date).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+    $("#day-rev").textContent = money(d.revenue);
+    $("#day-ord").textContent = d.orders;
+    $("#day-avg").textContent = d.orders ? money(Math.round(d.revenue / d.orders)) : "—";
+    const sh = $("#day-share"); if (sh) sh.textContent = (rev ? Math.round(d.revenue / rev * 100) : 0) + "%";
+  });
   $("#sync").onclick = async () => { await api("POST", "/api/sync"); toast("Синхронизация запущена. Данные обновятся через несколько секунд."); };
 };
+
+// склонение: plural(1,"час","часа","часов")
+function plural(n, one, few, many) {
+  n = Math.abs(n) % 100; const n1 = n % 10;
+  if (n > 10 && n < 20) return many;
+  if (n1 > 1 && n1 < 5) return few;
+  if (n1 === 1) return one;
+  return many;
+}
 
 // ---------- Аккаунты ----------
 pages.accounts = async root => {
@@ -263,9 +396,10 @@ pages.accounts = async root => {
         </div>
         <div class="acc-balance">${money(a.balance, a.currency)}</div>
         ${a.error ? `<div class="err">${esc(a.error)}</div>` : ""}
-        <div class="acc-meta muted"><span>Заказов: ${a.orders_total}</span><span>Синхр.: ${a.last_sync ? ago(a.last_sync) : "—"}</span></div>
+        <div class="acc-meta muted"><span>Заказов: ${a.orders_total}</span><span>Синхр.: ${a.last_sync ? ago(a.last_sync) : "—"}</span><span>${a.proxy ? "🌐 через прокси" : "без прокси"}</span></div>
         <div class="acc-actions">
           <button class="btn" data-rename="${a.id}">Переименовать</button>
+          <button class="btn" data-proxy="${a.id}">Прокси</button>
           <button class="btn ghost danger" data-del="${a.id}">Удалить</button>
         </div>
       </section>`).join("")}</div>`
@@ -295,6 +429,26 @@ pages.accounts = async root => {
     const a = accs.find(x => x.id === +b.dataset.del);
     modal(`<h2>Удалить «${esc(a.name)}»?</h2><p class="muted">Сервер перестанет работать с этим аккаунтом, история его продаж будет удалена.</p>`,
       "Удалить", async () => { await api("DELETE", `/api/accounts/${a.id}`); toast("Аккаунт удалён"); go("accounts"); });
+  }));
+  root.querySelectorAll("[data-proxy]").forEach(b => (b.onclick = () => {
+    const a = accs.find(x => x.id === +b.dataset.proxy);
+    modal(`<h2>Прокси для «${esc(a.name)}»</h2>
+      <p class="muted">Бот будет ходить на FunPay через этот прокси — отдельный IP для этого аккаунта. Нужно, если у вас много аккаунтов.</p>
+      <label class="field"><span>Прокси</span><input name="proxy" value="${esc(a.proxy || "")}" placeholder="host:port или host:port:логин:пароль" autocomplete="off">
+        <small class="hint">Форматы: <b>host:port</b> · <b>host:port:логин:пароль</b> · <b>socks5://логин:пароль@host:port</b>. Пусто — без прокси (прямое подключение).</small></label>
+      <button type="button" class="btn ghost" id="proxy-test" style="margin-bottom:8px">Проверить прокси</button>
+      <p class="muted small" id="proxy-result"></p>`,
+      "Сохранить", async f => { await api("PUT", `/api/accounts/${a.id}/proxy`, { proxy: f.proxy.value.trim() }); toast("Прокси сохранён"); go("accounts"); },
+      form => {
+        form.querySelector("#proxy-test").onclick = async () => {
+          const res = form.querySelector("#proxy-result");
+          const val = form.proxy.value.trim();
+          if (!val) { res.textContent = "Впишите прокси для проверки."; return; }
+          res.textContent = "Проверяю…";
+          try { await api("PUT", `/api/accounts/${a.id}/proxy`, { proxy: val }); const r = await api("POST", `/api/accounts/${a.id}/proxy/test`); res.innerHTML = `<span style="color:var(--mint)">✓ ${esc(r.message)}</span>`; }
+          catch (e) { res.innerHTML = `<span style="color:#ff7a6b">✗ ${esc(e.message)}</span>`; }
+        };
+      });
   }));
 };
 
@@ -340,15 +494,43 @@ let pluginCat = "all";      // категория
 let pluginSearch = "";
 let pluginSelected = null;   // id плагина, открытого в карточке справа
 
-// иконки для категорий/плагинов (emoji — работают в любом WebView)
-const PLUGIN_ICONS = {
-  autodelivery: "📦", autoresponder: "💬", ai_assistant: "🤖", autosmm: "📈",
-  offline_activite: "🔑", email_code: "✉️", rent_steam: "🎮", big_orders: "💰",
-  auto_stars: "⭐", auto_gifts: "🎁", roblox_vip: "🧩", autoticket: "🎫",
-  _cat: { "Основное": "📦", "Покупатели": "💬", "Telegram": "✈️", "Steam": "🎮",
-          "Аренда аккаунтов": "🔑", "Выдача через поставщиков": "🛒", "Уведомления": "🔔" }
+// ---------- SVG-иконки (тонкие линии, единый стиль) ----------
+const _svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON = {
+  chart: _svg('<path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 5-7"/>'),
+  wallet: _svg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14h2"/>'),
+  users: _svg('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 19a5 5 0 0 0-3-4.6"/>'),
+  bolt: _svg('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+  box: _svg('<path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/>'),
+  chat: _svg('<path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.5A8 8 0 1 1 21 12z"/>'),
+  bot: _svg('<rect x="4" y="8" width="16" height="11" rx="2.5"/><path d="M12 8V4M8 13h.01M16 13h.01M9 16h6"/><circle cx="12" cy="4" r="1"/>'),
+  trend: _svg('<path d="M3 17l6-6 4 4 7-8"/><path d="M17 7h4v4"/>'),
+  key: _svg('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l2 2M14 9l2 2"/>'),
+  mail: _svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>'),
+  game: _svg('<rect x="2" y="7" width="20" height="11" rx="4"/><path d="M7 11v3M5.5 12.5h3M15.5 12h.01M18 14h.01"/>'),
+  coins: _svg('<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>'),
+  star: _svg('<path d="m12 2 3 6.5 7 .7-5 4.8 1.4 7L12 17.8 5.2 21l1.4-7-5-4.8 7-.7z"/>'),
+  gift: _svg('<rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 12h18M12 8v13M12 8S10 3 7.5 4.5 9 8 12 8zM12 8s2-5 4.5-3.5S15 8 12 8z"/>'),
+  puzzle: _svg('<path d="M9 3h6v3a2 2 0 1 0 4 0h2v6h-3a2 2 0 1 0 0 4h3v4H9v-3a2 2 0 1 0-4 0H3V10h2a2 2 0 1 0 0-4H3V3z"/>'),
+  ticket: _svg('<path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2 2 2 0 0 0 0-4z"/><path d="M14 6v12"/>'),
+  plane: _svg('<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>'),
+  cart: _svg('<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.4a1.5 1.5 0 0 0 1.5 1.2h8.7a1.5 1.5 0 0 0 1.5-1.2L22 7H6"/>'),
+  bell: _svg('<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>'),
+  plug: _svg('<path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5"/>'),
+  globe: _svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>'),
+  check: _svg('<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>'),
+  warn: _svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>'),
+  sync: _svg('<path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/>'),
+  arrow: _svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
 };
-const pluginIcon = p => PLUGIN_ICONS[p.id] || PLUGIN_ICONS._cat[p.category] || "🔌";
+const pluginIconKey = {
+  autodelivery: "box", autoresponder: "chat", ai_assistant: "bot", autosmm: "trend",
+  offline_activite: "key", email_code: "mail", rent_steam: "game", big_orders: "coins",
+  auto_stars: "star", auto_gifts: "gift", roblox_vip: "puzzle", autoticket: "ticket",
+};
+const catIconKey = { "Основное": "box", "Покупатели": "chat", "Telegram": "plane", "Steam": "game",
+  "Аренда аккаунтов": "key", "Выдача через поставщиков": "cart", "Уведомления": "bell" };
+const pluginIcon = p => ICON[pluginIconKey[p.id]] || ICON[catIconKey[p.category]] || ICON.plug;
 
 // ---------- полноэкранное окно настройки плагина ----------
 let _rentReopen = null;
@@ -601,13 +783,13 @@ pages.plugins = async root => {
     </div>
     <div class="pchips">
       <button class="pchip ${pluginCat === "all" ? "on" : ""}" data-cat="all">Все задачи <span>${filtered.length}</span></button>
-      ${cats.map(([c, n]) => `<button class="pchip ${pluginCat === c ? "on" : ""}" data-cat="${esc(c)}">${PLUGIN_ICONS._cat[c] || "🔌"} ${esc(c)} <span>${n}</span></button>`).join("")}
+      ${cats.map(([c, n]) => `<button class="pchip ${pluginCat === c ? "on" : ""}" data-cat="${esc(c)}"><span class="chip-ic">${ICON[catIconKey[c]] || ICON.plug}</span>${esc(c)} <span>${n}</span></button>`).join("")}
     </div>
 
     <div class="pcatalog">
       <div class="pcatalog-main">
         ${groups.length ? groups.map(([cat, items]) => `
-          <h2 class="group">${PLUGIN_ICONS._cat[cat] || "🔌"} ${esc(cat)}</h2>
+          <h2 class="group"><span class="chip-ic">${ICON[catIconKey[cat]] || ICON.plug}</span>${esc(cat)}</h2>
           <div class="pcards">${items.map(card).join("")}</div>
         `).join("") : `<div class="panel empty"><h2>Ничего не найдено</h2><p class="muted">Измените поиск или фильтры.</p></div>`}
       </div>
@@ -1246,7 +1428,7 @@ pages.settings = async root => {
 };
 
 // ---------- модальное окно ----------
-function modal(html, okText, onOk) {
+function modal(html, okText, onOk, onReady) {
   const root = $("#modal-root");
   root.innerHTML = `<div class="overlay"><form class="modal" novalidate>${html}
     <p class="error" hidden></p>
@@ -1273,6 +1455,7 @@ function modal(html, okText, onOk) {
     catch (x) { err.textContent = x.message; err.hidden = false; }
     finally { ok.disabled = false; }
   };
+  if (typeof onReady === "function") try { onReady(form); } catch (e) {}
   // фокус в первое поле после отрисовки окна: клик мышью + focus, иначе QtWebEngine не отдаёт ввод
   requestAnimationFrame(() => {
     const first = $("input, textarea", form);
