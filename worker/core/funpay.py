@@ -150,7 +150,15 @@ class FunPayAccount:
         self.username = _text(soup.select_one(".user-link-name")) or f"id{self.user_id}"
         bal_el = soup.select_one(".badge-balance")
         balance, currency = _money(bal_el.get_text()) if bal_el else (0.0, "₽")
-        return {"user_id": self.user_id, "username": self.username, "balance": balance, "currency": currency}
+        avatar = ""
+        ava_el = soup.select_one(".user-link-photo, .avatar-photo")
+        if ava_el:
+            style = ava_el.get("style", "")
+            if m := re.search(r"url\(['\"]?([^'\")]+)", style):
+                avatar = m.group(1)
+            elif ava_el.get("data-src"):
+                avatar = ava_el["data-src"]
+        return {"user_id": self.user_id, "username": self.username, "balance": balance, "currency": currency, "avatar": avatar}
 
     # ---------- продажи ----------
     def get_sales(self) -> list[dict]:
@@ -201,12 +209,22 @@ class FunPayAccount:
         for a in BeautifulSoup(html, "html.parser").select("a.contact-item"):
             if not a.get("data-id"):
                 continue
+            avatar = ""
+            ava_el = a.select_one(".avatar-photo")
+            if ava_el:
+                # аватар может быть в style="background-image:url(...)" или в data-src
+                style = ava_el.get("style", "")
+                if m := re.search(r"url\(['\"]?([^'\")]+)", style):
+                    avatar = m.group(1)
+                elif ava_el.get("data-src"):
+                    avatar = ava_el["data-src"]
             out.append({
                 "id": a["data-id"],
                 "name": _text(a.select_one(".media-user-name")),
                 "last_msg_id": int(a.get("data-node-msg") or 0),
                 "last_text": _text(a.select_one(".contact-item-message")),
                 "unread": "unread" in a.get("class", []),
+                "avatar": avatar,
             })
         return out
 
