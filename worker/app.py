@@ -45,15 +45,62 @@ def status():
 
 # ---------- аккаунты ----------
 def public_account(a):
+    import time as _t
     a = dict(a)
     a.pop("key_enc", None)
     a["orders_total"] = db.query("SELECT COUNT(*) c FROM orders WHERE account_id=?", (a["id"],))[0]["c"]
+    day0 = _t.time() - (_t.localtime().tm_hour * 3600 + _t.localtime().tm_min * 60 + _t.localtime().tm_sec)
+    tr = db.query("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM orders WHERE account_id=? AND ts>=? AND status!='refunded'", (a["id"], day0))
+    a["today_orders"] = tr[0]["c"]
+    a["today_revenue"] = tr[0]["s"]
+    a["proxy_on"] = bool((a.get("proxy") or "").strip())
     return a
 
 
 @app.get("/api/accounts")
 def accounts_list():
     return jsonify([public_account(a) for a in db.query("SELECT * FROM accounts ORDER BY id")])
+
+
+@app.put("/api/accounts/<int:aid>/proxy")
+def account_set_proxy(aid):
+    d = request.get_json(force=True) or {}
+    proxy = (d.get("proxy") or "").strip()
+    if proxy:
+        from core.funpay import parse_proxy
+        if not parse_proxy(proxy):
+            return err("Не понял формат прокси. Примеры: host:port или host:port:логин:пароль или socks5://логин:пароль@host:port")
+    db.execute("UPDATE accounts SET proxy=? WHERE id=?", (proxy, aid))
+    from core import accounts as _acc
+    _acc.forget(aid)  # пересоздать клиент с новым прокси
+    return jsonify(ok=True)
+
+
+@app.post("/api/accounts/<int:aid>/proxy/test")
+def account_test_proxy(aid):
+    """Проверка прокси: ходим через него на FunPay, замеряем отклик."""
+    import time as _t
+    rows = db.query("SELECT proxy FROM accounts WHERE id=?", (aid,))
+    if not rows:
+        return err("Аккаунт не найден", 404)
+    proxy = rows[0].get("proxy") or ""
+    if not proxy:
+        return err("У этого аккаунта не задан прокси")
+    from core.funpay import parse_proxy
+    import requests as _rq
+    p = parse_proxy(proxy)
+    if not p:
+        return err("Неверный формат прокси")
+    try:
+        t0 = _t.time()
+        r = _rq.get("https://funpay.com", proxies=p, timeout=15,
+                    headers={"User-Agent": "Mozilla/5.0"})
+        ms = int((_t.time() - t0) * 1000)
+        if r.status_code >= 500:
+            return err(f"Прокси отвечает, но FunPay вернул {r.status_code}")
+        return jsonify(ok=True, ms=ms, message=f"Работает · отклик {ms} мс")
+    except Exception as e:
+        return err(f"Прокси не работает: {e}")
 
 
 @app.post("/api/accounts")
