@@ -5,9 +5,9 @@ const Demo = (() => {
   const pick = a => a[Math.floor(rnd() * a.length)];
 
   const accounts = [
-    { id: 1, name: "Основной", username: "NightTrader", user_id: 14089460, balance: 48210.5, currency: "₽", status: "ok", error: null, last_sync: Date.now()/1000-90, proxy: "1.2.3.4:8080:user:pass", proxy_on: true, orders_total: 265, today_orders: 1, today_revenue: 2350 },
-    { id: 2, name: "Скины", username: "skinbox_de", user_id: 9910233, balance: 17340, currency: "₽", status: "ok", error: null, last_sync: Date.now()/1000-140, proxy_on: false, orders_total: 177, today_orders: 0, today_revenue: 0 },
-    { id: 3, name: "Запасной", username: "reserve_acc", user_id: 7733110, balance: 2105, currency: "₽", status: "error", error: "golden_key недействителен: FunPay не узнал аккаунт", last_sync: Date.now()/1000-3600, proxy_on: false, orders_total: 0, today_orders: 0, today_revenue: 0 },
+    { id: 1, name: "Основной", username: "NightTrader", user_id: 14089460, avatar: "", balance: 48210.5, currency: "₽", status: "ok", error: null, last_sync: Date.now()/1000-90, proxy: "1.2.3.4:8080:user:pass", proxy_on: true, orders_total: 265, today_orders: 1, today_revenue: 2350 },
+    { id: 2, name: "Скины", username: "skinbox_de", user_id: 9910233, avatar: "", balance: 17340, currency: "₽", status: "ok", error: null, last_sync: Date.now()/1000-140, proxy_on: false, orders_total: 177, today_orders: 0, today_revenue: 0 },
+    { id: 3, name: "Запасной", username: "reserve_acc", user_id: 7733110, avatar: "", balance: 2105, currency: "₽", status: "error", error: "golden_key недействителен: FunPay не узнал аккаунт", last_sync: Date.now()/1000-3600, proxy_on: false, orders_total: 0, today_orders: 0, today_revenue: 0 },
   ];
   const lots = [
     ["Telegram Stars, 500 шт, быстрая выдача", 740], ["Steam ключ Elden Ring", 1890], ["CS2 AK-47 | Redline (FT)", 2350],
