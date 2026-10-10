@@ -22,10 +22,10 @@ def use(account_id: int):
     with lock:
         fp = _clients.get(account_id)
         if fp is None:
-            rows = db.query("SELECT key_enc FROM accounts WHERE id=?", (account_id,))
+            rows = db.query("SELECT key_enc, proxy FROM accounts WHERE id=?", (account_id,))
             if not rows:
                 raise FunPayError(f"Аккаунт #{account_id} не найден")
-            fp = _clients[account_id] = FunPayAccount(decrypt(rows[0]["key_enc"]))
+            fp = _clients[account_id] = FunPayAccount(decrypt(rows[0]["key_enc"]), rows[0].get("proxy") or "")
         yield fp
 
 
