@@ -66,11 +66,36 @@ def _text(el):
     return el.get_text(" ", strip=True) if el else ""
 
 
+def parse_proxy(raw: str):
+    """Разбирает строку прокси в формат для requests.
+    Поддержка: host:port:user:pass, host:port, protocol://user:pass@host:port.
+    Возвращает dict {"http": url, "https": url} или None."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    # уже со схемой: socks5://user:pass@host:port или http://host:port
+    if "://" in raw:
+        url = raw
+    else:
+        parts = raw.split(":")
+        if len(parts) == 2:           # host:port
+            url = f"http://{parts[0]}:{parts[1]}"
+        elif len(parts) == 4:         # host:port:user:pass
+            host, port, user, pwd = parts
+            url = f"http://{user}:{pwd}@{host}:{port}"
+        else:
+            return None
+    return {"http": url, "https": url}
+
+
 class FunPayAccount:
-    def __init__(self, golden_key: str):
+    def __init__(self, golden_key: str, proxy: str = ""):
         self.s = requests.Session()
         self.s.headers["User-Agent"] = UA
         self.s.cookies.set("golden_key", golden_key.strip(), domain="funpay.com")
+        p = parse_proxy(proxy)
+        if p:
+            self.s.proxies.update(p)
         self.user_id = None
         self.username = None
         self.csrf = None
