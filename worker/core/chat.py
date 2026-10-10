@@ -110,8 +110,8 @@ def poll_account(acc):
             # проставляя убывающее время, чтобы в приложении новые были сверху.
             now = time.time()
             for i, c in enumerate(chats):
-                db.execute("INSERT OR REPLACE INTO chats(account_id, chat_id, name, last_msg_id, last_text, last_ts, unread, greeted) "
-                           "VALUES(?,?,?,?,?,?,?,1)", (acc["id"], c["id"], c["name"], c["last_msg_id"], c["last_text"], now - i, int(c["unread"])))
+                db.execute("INSERT OR REPLACE INTO chats(account_id, chat_id, name, last_msg_id, last_text, last_ts, unread, greeted, avatar) "
+                           "VALUES(?,?,?,?,?,?,?,1,?)", (acc["id"], c["id"], c["name"], c["last_msg_id"], c["last_text"], now - i, int(c["unread"]), c.get("avatar", "")))
             return
         for c in chats:
             row = (db.query("SELECT * FROM chats WHERE account_id=? AND chat_id=?", (acc["id"], c["id"])) or [None])[0]
@@ -125,10 +125,10 @@ def poll_account(acc):
             _store(acc["id"], c["id"], history)
             greeted = _process_new(fp, acc, c, row, new_msgs)
             last = history[-1] if history else None
-            db.execute("INSERT OR REPLACE INTO chats(account_id, chat_id, name, last_msg_id, last_text, last_ts, unread, greeted) "
-                       "VALUES(?,?,?,?,?,?,?,?)",
+            db.execute("INSERT OR REPLACE INTO chats(account_id, chat_id, name, last_msg_id, last_text, last_ts, unread, greeted, avatar) "
+                       "VALUES(?,?,?,?,?,?,?,?,?)",
                        (acc["id"], c["id"], c["name"], c["last_msg_id"], c["last_text"],
-                        last["ts"] if last else time.time(), int(c["unread"]), int(greeted or bool(row and row["greeted"]))))
+                        last["ts"] if last else time.time(), int(c["unread"]), int(greeted or bool(row and row["greeted"])), c.get("avatar", row["avatar"] if row else "")))
 
 
 def refresh_chat(acc_id, chat_id):
