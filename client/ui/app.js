@@ -409,7 +409,7 @@ pages.accounts = async root => {
     const detail = sel ? `
       <aside class="panel acc-detail">
         <div class="ad-head">
-          <div class="avatar" style="background:${ACC_COLORS[idx(sel) % 6]}">${esc((sel.username || sel.name)[0].toUpperCase())}</div>
+          ${avatarHtml(sel.username || sel.name, sel.avatar, "", idx(sel))}
           <div class="ad-id"><b>${esc(sel.name)}</b><div class="muted small">${sel.user_id ? "#" + sel.user_id : esc(sel.username || "")}</div></div>
           <span class="pill ${sel.status}" style="margin-left:auto">${STATUS[sel.status] || sel.status}</span>
         </div>
@@ -448,7 +448,7 @@ pages.accounts = async root => {
           <div class="acc-rows">
             ${shown.length ? shown.map(a => `
               <div class="acc-row ${accSelected === a.id ? "sel" : ""}" data-sel="${a.id}">
-                <div class="avatar sm" style="background:${ACC_COLORS[idx(a) % 6]}">${esc((a.username || a.name)[0].toUpperCase())}</div>
+                ${avatarHtml(a.username || a.name, a.avatar, "sm", idx(a))}
                 <div class="acc-row-id"><b>${esc(a.name)}</b><div class="muted small">${a.user_id ? "#" + a.user_id : esc(a.username || "")}</div></div>
                 <span class="pill ${a.status}">${STATUS[a.status] || a.status}</span>
                 <div class="acc-row-bal">${money(a.balance, a.currency)}</div>
@@ -619,6 +619,15 @@ const pluginIconKey = {
 const catIconKey = { "Основное": "box", "Покупатели": "chat", "Telegram": "plane", "Steam": "game",
   "Аренда аккаунтов": "key", "Выдача через поставщиков": "cart", "Уведомления": "bell" };
 const pluginIcon = p => ICON[pluginIconKey[p.id]] || ICON[catIconKey[p.category]] || ICON.plug;
+
+// аватар: реальная картинка с FunPay или цветной кружок с буквой
+function avatarHtml(name, url, cls = "sm", colorIdx = 0) {
+  const letter = esc((name || "?")[0].toUpperCase());
+  const bg = ACC_COLORS[colorIdx % 6];
+  const fallback = `<div class='avatar ${cls}' style='background:${bg}'>${letter}</div>`;
+  if (url) return `<img class="avatar ${cls}" src="${esc(url)}" alt="" onerror="this.outerHTML=&quot;${fallback.replace(/"/g, "&quot;").replace(/'/g, "&#39;")}&quot;">`;
+  return `<div class="avatar ${cls}" style="background:${bg}">${letter}</div>`;
+}
 
 // ---------- полноэкранное окно настройки плагина ----------
 let _rentReopen = null;
@@ -972,7 +981,7 @@ pages.chats = async root => {
     if (chatFilter === "unread") items = items.filter(c => c.unread);
     $("#chat-list").innerHTML = items.map((c, i) => `
       <a class="chat-item${c.unread ? " unread" : ""}${chatView.acc === c.account_id && chatView.id === c.chat_id ? " on" : ""}" data-acc="${c.account_id}" data-id="${esc(c.chat_id)}" data-name="${esc(c.name)}">
-        <div class="avatar sm" style="background:${ACC_COLORS[(c.name || "?").charCodeAt(0) % 6]}">${esc((c.name || "?")[0].toUpperCase())}</div>
+        ${avatarHtml(c.name, c.avatar, "sm", (c.name || "?").charCodeAt(0))}
         <div class="chat-item-body">
           <div class="chat-item-top"><b>${esc(c.name)}</b><time>${c.last_ts ? whenTs(c.last_ts) : ""}</time></div>
           <div class="chat-item-text">${esc(c.last_text || "")}</div>
