@@ -123,6 +123,13 @@ with _lock:
     if "proxy" not in _cols:
         _conn.execute("ALTER TABLE accounts ADD COLUMN proxy TEXT DEFAULT ''")
         _conn.commit()
+    _ccols = {r[1] for r in _conn.execute("PRAGMA table_info(chats)").fetchall()}
+    if "avatar" not in _ccols:
+        _conn.execute("ALTER TABLE chats ADD COLUMN avatar TEXT DEFAULT ''")
+        _conn.commit()
+    if "avatar" not in _cols:
+        _conn.execute("ALTER TABLE accounts ADD COLUMN avatar TEXT DEFAULT ''")
+        _conn.commit()
 
 
 def query(sql, params=()):
