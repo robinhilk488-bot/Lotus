@@ -383,27 +383,83 @@ function plural(n, one, few, many) {
 }
 
 // ---------- Аккаунты ----------
+let accFilter = "all"; // all | ok | error
+let accSearch = "";
+let accSelected = null;
 pages.accounts = async root => {
   const accs = await api("GET", "/api/accounts");
-  root.innerHTML = `
-    <div class="page-head"><h1>Аккаунты</h1><button class="btn primary" id="add">Добавить аккаунт</button></div>
-    ${accs.length ? `<div class="accounts">${accs.map((a, i) => `
-      <section class="panel acc">
-        <div class="acc-top">
-          <div class="avatar" style="background:${ACC_COLORS[i % 6]}">${esc((a.username || a.name)[0].toUpperCase())}</div>
-          <div><div class="acc-name">${esc(a.name)}</div><div class="muted small">${esc(a.username || "")}</div></div>
-          <span class="pill ${a.status}" style="margin-left:auto">${{ ok: "Работает", error: "Ошибка", new: "Проверка" }[a.status] || a.status}</span>
+  const total = accs.reduce((s, a) => s + a.balance, 0);
+  const okN = accs.filter(a => a.status === "ok").length;
+  const errN = accs.filter(a => a.status === "error").length;
+  const STATUS = { ok: "Работает", error: "Ошибка", new: "Проверка" };
+
+  const q = accSearch.trim().toLowerCase();
+  const shown = accs.filter(a => {
+    if (accFilter !== "all" && a.status !== accFilter) return false;
+    if (q && !(`${a.name} ${a.username || ""} ${a.user_id || ""}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const sel = accSelected ? accs.find(a => a.id === accSelected) : shown[0];
+  const idx = a => accs.findIndex(x => x.id === a.id);
+
+  if (!accs.length) {
+    root.innerHTML = `<div class="page-head"><h1>Аккаунты</h1><button class="btn primary" id="add"><span class="btn-ic">${ICON.users}</span>Добавить аккаунт</button></div>
+      <div class="panel empty"><div class="empty-ic">${ICON.users}</div><h2>Аккаунтов пока нет</h2><p class="muted">Добавьте аккаунт FunPay по golden_key, и сервер начнёт собирать баланс и продажи.</p><button class="btn primary" id="add2">Добавить аккаунт</button></div>`;
+  } else {
+    const detail = sel ? `
+      <aside class="panel acc-detail">
+        <div class="ad-head">
+          <div class="avatar" style="background:${ACC_COLORS[idx(sel) % 6]}">${esc((sel.username || sel.name)[0].toUpperCase())}</div>
+          <div class="ad-id"><b>${esc(sel.name)}</b><div class="muted small">${sel.user_id ? "#" + sel.user_id : esc(sel.username || "")}</div></div>
+          <span class="pill ${sel.status}" style="margin-left:auto">${STATUS[sel.status] || sel.status}</span>
         </div>
-        <div class="acc-balance">${money(a.balance, a.currency)}</div>
-        ${a.error ? `<div class="err">${esc(a.error)}</div>` : ""}
-        <div class="acc-meta muted"><span>Заказов: ${a.orders_total}</span><span>Синхр.: ${a.last_sync ? ago(a.last_sync) : "—"}</span><span>${a.proxy ? "🌐 через прокси" : "без прокси"}</span></div>
-        <div class="acc-actions">
-          <button class="btn" data-rename="${a.id}">Переименовать</button>
-          <button class="btn" data-proxy="${a.id}">Прокси</button>
-          <button class="btn ghost danger" data-del="${a.id}">Удалить</button>
+        ${sel.error ? `<div class="err" style="margin-bottom:12px">${esc(sel.error)}</div>` : ""}
+        <div class="ad-stats">
+          <div><div class="muted small">Баланс</div><b class="neon">${money(sel.balance, sel.currency)}</b></div>
+          <div><div class="muted small">Сегодня</div><b>${sel.today_orders ? money(sel.today_revenue, sel.currency) : "Нет продаж"}</b></div>
+          <div><div class="muted small">Заказов всего</div><b>${sel.orders_total}</b></div>
+          <div><div class="muted small">Подключение</div><b>${sel.proxy_on ? "Через прокси" : "Напрямую"}</b></div>
         </div>
-      </section>`).join("")}</div>`
-    : `<div class="panel empty"><h2>Аккаунтов пока нет</h2><p class="muted">Добавьте аккаунт FunPay по golden_key, и сервер начнёт собирать баланс и продажи.</p><button class="btn primary" id="add2">Добавить аккаунт</button></div>`}`;
+        <div class="ad-actions">
+          <button class="btn" data-rename="${sel.id}">Переименовать</button>
+          <button class="btn" data-proxy="${sel.id}">Прокси</button>
+          <button class="btn ghost danger" data-del="${sel.id}">Удалить</button>
+        </div>
+        <a class="ad-open" href="https://funpay.com/users/${sel.user_id || ""}/" target="_blank">Открыть на FunPay ${ICON.arrow}</a>
+      </aside>` : "";
+
+    root.innerHTML = `
+      <div class="page-head"><h1>Аккаунты</h1><button class="btn primary" id="add"><span class="btn-ic">${ICON.users}</span>Добавить аккаунт</button></div>
+      <div class="muted small" style="margin:-8px 0 18px">Аккаунты FunPay, которыми управляет Lotus</div>
+
+      <div class="acc-stats">
+        <div class="metric"><div class="metric-head"><span class="metric-ic sky">${ICON.users}</span><span class="metric-l">Всего</span></div><div class="metric-v">${accs.length}</div></div>
+        <div class="metric"><div class="metric-head"><span class="metric-ic mint">${ICON.check}</span><span class="metric-l">Работают</span></div><div class="metric-v mint">${okN}</div></div>
+        <div class="metric"><div class="metric-head"><span class="metric-ic" style="color:var(--coral);background:rgba(255,122,107,.12)">${ICON.warn}</span><span class="metric-l">С ошибкой</span></div><div class="metric-v" style="color:var(--coral)">${errN}</div></div>
+        <div class="metric"><div class="metric-head"><span class="metric-ic gold">${ICON.wallet}</span><span class="metric-l">Баланс</span></div><div class="metric-v neon">${nf.format(Math.round(total))} ₽</div></div>
+      </div>
+
+      <div class="acc-layout">
+        <div class="acc-main">
+          <div class="acc-bar">
+            <input id="acc-search" class="psearch" placeholder="Никнейм или ID FunPay" value="${esc(accSearch)}">
+            <div class="seg">${[["all", "Все", accs.length], ["ok", "Работают", okN], ["error", "С ошибкой", errN]].map(([k, t, c]) => `<button data-af="${k}" class="${accFilter === k ? "on" : ""}">${t} <span class="seg-count">${c}</span></button>`).join("")}</div>
+          </div>
+          <div class="acc-rows">
+            ${shown.length ? shown.map(a => `
+              <div class="acc-row ${accSelected === a.id ? "sel" : ""}" data-sel="${a.id}">
+                <div class="avatar sm" style="background:${ACC_COLORS[idx(a) % 6]}">${esc((a.username || a.name)[0].toUpperCase())}</div>
+                <div class="acc-row-id"><b>${esc(a.name)}</b><div class="muted small">${a.user_id ? "#" + a.user_id : esc(a.username || "")}</div></div>
+                <span class="pill ${a.status}">${STATUS[a.status] || a.status}</span>
+                <div class="acc-row-bal">${money(a.balance, a.currency)}</div>
+                <span class="dot ${a.status === "ok" ? "ok" : "err"}"></span>
+              </div>`).join("") : `<div class="empty-mini"><p class="muted">Ничего не найдено. Измените поиск или фильтр.</p></div>`}
+          </div>
+          <div class="muted small" style="margin-top:12px">Аккаунтов: ${shown.length}</div>
+        </div>
+        ${detail}
+      </div>`;
+  }
 
   const openAdd = () => modal(`
       <h2>Новый аккаунт</h2>
@@ -418,6 +474,11 @@ pages.accounts = async root => {
     });
   $("#add").onclick = openAdd;
   if ($("#add2")) $("#add2").onclick = openAdd;
+
+  const sb = $("#acc-search");
+  if (sb) sb.oninput = () => { accSearch = sb.value; clearTimeout(sb._t); sb._t = setTimeout(() => go("accounts"), 250); };
+  root.querySelectorAll("[data-af]").forEach(b => b.onclick = () => { accFilter = b.dataset.af; accSelected = null; go("accounts"); });
+  root.querySelectorAll("[data-sel]").forEach(r => r.onclick = () => { accSelected = +r.dataset.sel; go("accounts"); });
 
   root.querySelectorAll("[data-rename]").forEach(b => (b.onclick = () => {
     const a = accs.find(x => x.id === +b.dataset.rename);
@@ -454,37 +515,64 @@ pages.accounts = async root => {
 
 // ---------- Продажи ----------
 const salesView = { days: 30, account: 0 };
+let deliverySearch = "";
+let salesStatus = "all"; // all | closed | refunded
+let salesSearch = "";
 pages.sales = async root => {
   const [accs, st] = await Promise.all([api("GET", "/api/accounts"), api("GET", `/api/stats?days=${salesView.days}&account=${salesView.account}`)]);
+  const q = salesSearch.trim().toLowerCase();
+  const orders = st.recent.filter(o => {
+    if (salesStatus === "closed" && !(o.status === "closed" || o.status === "paid")) return false;
+    if (salesStatus === "refunded" && o.status !== "refunded") return false;
+    if (q && !(`${o.id} ${o.description} ${o.buyer}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const refN = st.recent.filter(o => o.status === "refunded").length;
+  const doneN = st.recent.filter(o => o.status === "closed" || o.status === "paid").length;
+
   root.innerHTML = `
     <div class="page-head"><h1>Продажи</h1>
-      <select class="compact" id="acc"><option value="0">Все аккаунты</option>${accs.map(a => `<option value="${a.id}" ${a.id === salesView.account ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
-      <div class="seg">${[7, 30, 90].map(d => `<button data-d="${d}" class="${d === salesView.days ? "on" : ""}">${d} дней</button>`).join("")}</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <select class="compact" id="acc"><option value="0">Все аккаунты</option>${accs.map(a => `<option value="${a.id}" ${a.id === salesView.account ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
+        <div class="seg">${[7, 30, 90].map(d => `<button data-d="${d}" class="${d === salesView.days ? "on" : ""}">${d} дней</button>`).join("")}</div>
+      </div>
     </div>
-    <div class="kpis">
-      <section class="panel kpi money"><div class="k">Выручка</div><div class="v">${money(st.revenue)}</div></section>
-      <section class="panel kpi"><div class="k">Заказов</div><div class="v">${st.orders}</div></section>
-      <section class="panel kpi"><div class="k">Чистая прибыль</div><div class="v profit">${money(st.profit)}</div>
-        <div class="muted small">комиссия ${money(st.commission)}, себестоимость ${money(st.costs)}</div></section>
-      <section class="panel kpi"><div class="k">Средний чек</div><div class="v">${money(st.avg_check)}</div><div class="muted small">возвраты ${money(st.refunds)}</div></section>
+    <div class="muted small" style="margin:-8px 0 18px">Выручка, прибыль и все заказы за период</div>
+
+    <div class="metrics">
+      <div class="metric"><div class="metric-head"><span class="metric-ic sky">${ICON.chart}</span><span class="metric-l">Выручка</span></div><div class="metric-v neon">${money(st.revenue)}</div><div class="metric-s muted">${st.orders} ${plural(st.orders, "заказ", "заказа", "заказов")}</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic mint">${ICON.bolt}</span><span class="metric-l">Чистая прибыль</span></div><div class="metric-v mint">${money(st.profit)}</div><div class="metric-s muted">комиссия ${money(st.commission)}</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic gold">${ICON.coins}</span><span class="metric-l">Средний чек</span></div><div class="metric-v">${money(st.avg_check)}</div><div class="metric-s muted">возвраты ${money(st.refunds)}</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic" style="color:var(--coral);background:rgba(255,122,107,.12)">${ICON.warn}</span><span class="metric-l">Возвраты</span></div><div class="metric-v" style="color:var(--coral)">${refN}</div><div class="metric-s muted">из ${st.recent.length} заказов</div></div>
     </div>
-    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><h2>Выручка по дням</h2></div><div class="chart" id="chart"></div></section>
-    ${st.top_lots.length ? `<section class="panel" style="margin-bottom:16px"><div class="panel-head"><h2>Самые прибыльные лоты</h2><span class="muted small">за период</span></div>
+
+    <section class="panel" style="margin-bottom:16px"><div class="panel-head"><h2>${ICON.trend} Выручка по дням</h2><span class="muted small">за ${salesView.days} дней</span></div><div class="chart" id="chart"></div></section>
+
+    ${st.top_lots.length ? `<section class="panel" style="margin-bottom:16px"><div class="panel-head"><h2>${ICON.star} Самые прибыльные лоты</h2><span class="muted small">за период</span></div>
       <div class="table-wrap"><table><thead><tr><th>Лот</th><th class="num">Заказов</th><th class="num">Выручка</th><th class="num">Прибыль</th></tr></thead>
       <tbody>${st.top_lots.map(l => `<tr><td class="lot" title="${esc(l.lot)}">${esc(l.lot)}</td><td class="num">${l.orders}</td><td class="num nowrap">${money(l.revenue)}</td><td class="num nowrap"><b class="profit">${money(Math.round(l.profit))}</b></td></tr>`).join("")}</tbody></table></div>
     </section>` : ""}
-    <section class="panel"><div class="panel-head"><h2>Заказы</h2><span class="muted small">${st.recent.length} за период</span></div>
-      ${st.recent.length ? `<div class="table-wrap"><table>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Заказы</h2><span class="muted small">${orders.length} из ${st.recent.length}</span></div>
+      <div class="acc-bar" style="margin-bottom:14px">
+        <input id="sales-search" class="psearch" placeholder="Номер заказа, товар или покупатель" value="${esc(salesSearch)}">
+        <div class="seg">${[["all", "Все", st.recent.length], ["closed", "Выполнено", doneN], ["refunded", "Возвраты", refN]].map(([k, t, c]) => `<button data-ss="${k}" class="${salesStatus === k ? "on" : ""}">${t} <span class="seg-count">${c}</span></button>`).join("")}</div>
+      </div>
+      ${orders.length ? `<div class="table-wrap"><table>
         <thead><tr><th>Дата</th><th>Заказ</th><th>Товар</th><th>Покупатель</th><th>Аккаунт</th><th>Статус</th><th class="num">Сумма</th><th class="num">Прибыль</th></tr></thead>
-        <tbody>${st.recent.map(o => `<tr>
+        <tbody>${orders.map(o => `<tr>
           <td class="muted nowrap">${dateTime(o.ts)}</td><td>#${esc(o.id)}</td><td class="lot" title="${esc(o.description)}">${esc(o.description)}</td>
           <td>${esc(o.buyer)}</td><td class="muted">${esc(o.account)}</td><td>${statusPill(o.status)}</td>
           <td class="num nowrap"><b>${money(o.amount, o.currency)}</b></td><td class="num nowrap muted">${o.profit != null ? money(Math.round(o.profit)) : "—"}</td></tr>`).join("")}</tbody></table></div>`
-      : `<p class="muted">За этот период заказов нет.</p>`}
+      : `<div class="empty-mini"><div class="empty-ic">${ICON.cart}</div><p class="muted">${salesSearch || salesStatus !== "all" ? "Ничего не найдено. Измените поиск или фильтр." : "За этот период заказов нет."}</p></div>`}
     </section>`;
   drawChart($("#chart"), st.daily);
   root.querySelectorAll("[data-d]").forEach(b => (b.onclick = () => { salesView.days = +b.dataset.d; go("sales"); }));
   $("#acc").onchange = e => { salesView.account = +e.target.value; go("sales"); };
+  root.querySelectorAll("[data-ss]").forEach(b => b.onclick = () => { salesStatus = b.dataset.ss; go("sales"); });
+  const ss = $("#sales-search");
+  if (ss) ss.oninput = () => { salesSearch = ss.value; clearTimeout(ss._t); ss._t = setTimeout(() => go("sales"), 250); };
 };
 
 // ---------- Плагины ----------
@@ -860,25 +948,38 @@ const whenTs = ts => {
 
 // ---------- Чаты ----------
 const chatView = { acc: null, id: null, name: "" };
+let chatFilter = "all";
 pages.chats = async root => {
   let list = await api("GET", "/api/chats");
+  const unreadN = list.filter(c => c.unread).length;
   root.innerHTML = `
-    <div class="page-head"><h1>Чаты</h1><input id="chat-search" class="compact search" placeholder="Поиск по имени покупателя"></div>
+    <div class="page-head"><h1>Чаты</h1></div>
+    <div class="muted small" style="margin:-8px 0 18px">Переписка с покупателями со всех аккаунтов в одном месте${unreadN ? ` · непрочитанных: ${unreadN}` : ""}</div>
     ${list.length ? `<div class="chat-layout">
-      <aside class="panel chat-list" id="chat-list"></aside>
-      <section class="panel chat-box" id="chat-box"><div class="chat-empty muted">Выберите чат слева</div></section>
-    </div>` : `<div class="panel empty"><h2>Чатов пока нет</h2><p class="muted">Когда покупатели напишут вам на FunPay, переписка появится здесь. Сервер проверяет новые сообщения каждые несколько секунд.</p></div>`}`;
+      <aside class="panel chat-list-wrap">
+        <input id="chat-search" class="psearch" placeholder="Поиск по имени покупателя" style="margin-bottom:12px">
+        <div class="seg" style="margin-bottom:12px">${[["all", "Все", list.length], ["unread", "Непрочитанные", unreadN]].map(([k, t, c]) => `<button data-cf="${k}" class="${chatFilter === k ? "on" : ""}">${t} <span class="seg-count">${c}</span></button>`).join("")}</div>
+        <div class="chat-list" id="chat-list"></div>
+      </aside>
+      <section class="panel chat-box" id="chat-box"><div class="chat-empty"><div class="empty-ic">${ICON.chat}</div><p class="muted">Выберите диалог слева</p></div></section>
+    </div>` : `<div class="panel empty"><div class="empty-ic">${ICON.chat}</div><h2>Чатов пока нет</h2><p class="muted">Когда покупатели напишут вам на FunPay, переписка появится здесь. Сервер проверяет новые сообщения каждые несколько секунд.</p></div>`}`;
   if (!list.length) return;
   const many = new Set(list.map(c => c.account_id)).size > 1;
 
   const renderList = () => {
     const q = $("#chat-search").value.trim().toLowerCase();
-    $("#chat-list").innerHTML = list.filter(c => !q || (c.name || "").toLowerCase().includes(q)).map(c => `
+    let items = list.filter(c => !q || (c.name || "").toLowerCase().includes(q));
+    if (chatFilter === "unread") items = items.filter(c => c.unread);
+    $("#chat-list").innerHTML = items.map((c, i) => `
       <a class="chat-item${c.unread ? " unread" : ""}${chatView.acc === c.account_id && chatView.id === c.chat_id ? " on" : ""}" data-acc="${c.account_id}" data-id="${esc(c.chat_id)}" data-name="${esc(c.name)}">
-        <div class="chat-item-top"><b>${esc(c.name)}</b><time>${c.last_ts ? whenTs(c.last_ts) : ""}</time></div>
-        <div class="chat-item-text">${esc(c.last_text || "")}</div>
-        ${many ? `<div class="muted small">${esc(c.account)}</div>` : ""}
-      </a>`).join("") || `<p class="muted" style="padding:12px">Никого не найдено</p>`;
+        <div class="avatar sm" style="background:${ACC_COLORS[(c.name || "?").charCodeAt(0) % 6]}">${esc((c.name || "?")[0].toUpperCase())}</div>
+        <div class="chat-item-body">
+          <div class="chat-item-top"><b>${esc(c.name)}</b><time>${c.last_ts ? whenTs(c.last_ts) : ""}</time></div>
+          <div class="chat-item-text">${esc(c.last_text || "")}</div>
+          ${many ? `<div class="muted small">${esc(c.account)}</div>` : ""}
+        </div>
+        ${c.unread ? `<span class="chat-unread-dot"></span>` : ""}
+      </a>`).join("") || `<div class="empty-mini"><p class="muted">Никого не найдено</p></div>`;
     $("#chat-list").querySelectorAll(".chat-item").forEach(a => (a.onclick = () => openChat(+a.dataset.acc, a.dataset.id, a.dataset.name)));
   };
 
@@ -937,6 +1038,7 @@ pages.chats = async root => {
   }
 
   $("#chat-search").oninput = renderList;
+  root.querySelectorAll("[data-cf]").forEach(b => b.onclick = () => { chatFilter = b.dataset.cf; root.querySelectorAll("[data-cf]").forEach(x => x.classList.toggle("on", x === b)); renderList(); });
   renderList();
   if (chatView.acc && list.some(c => c.account_id === chatView.acc && c.chat_id === chatView.id)) openChat(chatView.acc, chatView.id, chatView.name);
   else {
@@ -949,25 +1051,45 @@ pages.chats = async root => {
 pages.delivery = async root => {
   const [lots, plist] = await Promise.all([api("GET", "/api/delivery"), api("GET", "/api/plugins")]);
   const pl = plist.find(p => p.id === "autodelivery");
-  const MODE = { text: "Один текст всем", fifo: "Уникальный товар из списка" };
+  const q = deliverySearch.trim().toLowerCase();
+  const shown = lots.filter(l => !q || `${l.phrase} ${l.text || ""}`.toLowerCase().includes(q));
+  const totalSold = lots.reduce((s, l) => s + (l.sold || 0), 0);
+  const lowN = lots.filter(l => l.mode === "fifo" && l.stock > 0 && l.stock <= 5).length;
+  const emptyN = lots.filter(l => l.mode === "fifo" && !l.stock).length;
+
   root.innerHTML = `
-    <div class="page-head"><h1>Автовыдача</h1><button class="btn primary" id="add-lot">Добавить лот</button></div>
-    <section class="panel row-panel ${pl?.enabled ? "" : "off"}">
-      <div><h2>${pl?.enabled ? "Автовыдача включена" : "Автовыдача выключена"}</h2>
-        <p class="muted">Когда заказ оплачен, сервер ищет в названии лота вашу фразу и сразу отправляет покупателю товар в чат FunPay. Если подходят несколько фраз, берётся самая длинная. Один заказ — одна выдача.</p></div>
-      <label class="switch"><input type="checkbox" id="ad-on" ${pl?.enabled ? "checked" : ""}><i></i></label>
+    <div class="page-head"><h1>Автовыдача</h1><button class="btn primary" id="add-lot"><span class="btn-ic">${ICON.box}</span>Добавить лот</button></div>
+    <div class="muted small" style="margin:-8px 0 18px">Товары и сообщения, которые Lotus отправляет покупателю после оплаты</div>
+
+    <section class="hero-status ${pl?.enabled ? "ok" : "warn"}">
+      <div class="hs-icon">${pl?.enabled ? ICON.check : ICON.warn}</div>
+      <div class="hs-text"><b>${pl?.enabled ? "Автовыдача включена" : "Автовыдача выключена"}</b>
+        <div class="muted small">После оплаты сервер ищет в названии лота вашу фразу и сразу отправляет товар покупателю в чат. Один заказ — одна выдача.</div></div>
+      <label class="switch" style="margin-left:auto"><input type="checkbox" id="ad-on" ${pl?.enabled ? "checked" : ""}><i></i></label>
     </section>
-    ${lots.length ? `<section class="panel" style="margin-top:16px"><div class="table-wrap"><table>
-      <thead><tr><th>Фраза в названии лота</th><th>Что выдаётся</th><th class="num">В наличии</th><th class="num">Выдано</th><th class="num">Себестоимость</th><th></th><th></th></tr></thead>
-      <tbody>${lots.map(l => `<tr>
-        <td><b>${esc(l.phrase)}</b></td><td class="muted nowrap">${l.mode === "fifo" ? "Из списка" : "Текст всем"}</td>
-        <td class="num">${l.mode === "fifo" ? `<span class="${l.stock ? "" : "warn-text"}">${l.stock}</span>` : "∞"}</td>
-        <td class="num">${l.mode === "fifo" ? l.sold : "—"}</td>
-        <td class="num nowrap">${l.cost ? money(l.cost) : "—"}</td>
-        <td><div class="row-actions">${l.mode === "fifo" ? `<button class="btn" data-stock="${l.id}">Товар</button>` : ""}<button class="btn" data-edit="${l.id}">Изменить</button><button class="btn ghost danger" data-del="${l.id}">Удалить</button></div></td>
-        <td class="toggle-cell"><label class="switch" title="Выдавать по этому лоту"><input type="checkbox" data-lot-on="${l.id}" ${l.enabled ? "checked" : ""}><i></i></label></td>
-      </tr>`).join("")}</tbody></table></div></section>`
-    : `<div class="panel empty" style="margin-top:16px"><h2>Лотов для автовыдачи нет</h2><p class="muted">Добавьте лот: фразу из его названия на FunPay и что получит покупатель.</p></div>`}`;
+
+    <div class="metrics">
+      <div class="metric"><div class="metric-head"><span class="metric-ic sky">${ICON.box}</span><span class="metric-l">Правил</span></div><div class="metric-v">${lots.length}</div><div class="metric-s muted">включено ${lots.filter(l => l.enabled).length}</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic mint">${ICON.check}</span><span class="metric-l">Выдано всего</span></div><div class="metric-v mint">${totalSold}</div><div class="metric-s muted">из списков</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic gold">${ICON.coins}</span><span class="metric-l">Заканчиваются</span></div><div class="metric-v">${lowN}</div><div class="metric-s muted">осталось 5 и меньше</div></div>
+      <div class="metric"><div class="metric-head"><span class="metric-ic" style="color:var(--coral);background:rgba(255,122,107,.12)">${ICON.warn}</span><span class="metric-l">Без товара</span></div><div class="metric-v" style="color:${emptyN ? "var(--coral)" : "inherit"}">${emptyN}</div><div class="metric-s muted">кончился товар</div></div>
+    </div>
+
+    <section class="panel">
+      <div class="acc-bar" style="margin-bottom:14px"><input id="del-search" class="psearch" placeholder="Фраза лота или текст выдачи" value="${esc(deliverySearch)}"></div>
+      ${shown.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Фраза в названии лота</th><th>Что выдаётся</th><th class="num">В наличии</th><th class="num">Выдано</th><th class="num">Себестоимость</th><th></th><th></th></tr></thead>
+        <tbody>${shown.map(l => `<tr>
+          <td><b>${esc(l.phrase)}</b></td><td class="muted nowrap">${l.mode === "fifo" ? "Из списка" : "Текст всем"}</td>
+          <td class="num">${l.mode === "fifo" ? `<span class="${l.stock ? (l.stock <= 5 ? "warn-text" : "") : "err-text"}">${l.stock}</span>` : "∞"}</td>
+          <td class="num">${l.mode === "fifo" ? l.sold : "—"}</td>
+          <td class="num nowrap">${l.cost ? money(l.cost) : "—"}</td>
+          <td><div class="row-actions">${l.mode === "fifo" ? `<button class="btn" data-stock="${l.id}">Товар</button>` : ""}<button class="btn" data-edit="${l.id}">Изменить</button><button class="btn ghost danger" data-del="${l.id}">Удалить</button></div></td>
+          <td class="toggle-cell"><label class="switch" title="Выдавать по этому лоту"><input type="checkbox" data-lot-on="${l.id}" ${l.enabled ? "checked" : ""}><i></i></label></td>
+        </tr>`).join("")}</tbody></table></div>`
+      : lots.length ? `<div class="empty-mini"><p class="muted">Ничего не найдено по запросу.</p></div>`
+      : `<div class="empty-mini"><div class="empty-ic">${ICON.box}</div><p class="muted">Лотов для автовыдачи нет. Добавьте лот: фразу из названия на FunPay и что получит покупатель.</p><button class="btn primary" id="add-lot2">Добавить лот</button></div>`}
+    </section>`;
 
   $("#ad-on").onchange = async e => {
     try { await api("POST", "/api/plugins/autodelivery/enabled", { enabled: e.target.checked }); toast(e.target.checked ? "Автовыдача включена" : "Автовыдача выключена"); go("delivery"); }
@@ -985,7 +1107,13 @@ pages.delivery = async root => {
       <small class="hint">Сколько вам стоит товар — для расчёта чистой прибыли. Можно оставить 0.</small></label>`;
   const read = f => ({ phrase: f.phrase.value, mode: f.mode.value, text: f.text.value, cost: Number(f.cost.value) || 0 });
 
-  $("#add-lot").onclick = () => modal(`<h2>Новый лот для автовыдачи</h2><p class="muted">После сохранения загрузите товар, если выбран список.</p>${lotForm({ mode: "fifo" })}`,
+  const openAddLot = () => modal(`<h2>Новый лот для автовыдачи</h2><p class="muted">После сохранения загрузите товар, если выбран список.</p>${lotForm({ mode: "fifo" })}`,
+    "Сохранить", async f => { await api("POST", "/api/delivery", { ...read(f), enabled: true }); toast("Лот добавлен"); go("delivery"); });
+  $("#add-lot").onclick = openAddLot;
+  if ($("#add-lot2")) $("#add-lot2").onclick = openAddLot;
+  const ds = $("#del-search");
+  if (ds) ds.oninput = () => { deliverySearch = ds.value; clearTimeout(ds._t); ds._t = setTimeout(() => go("delivery"), 250); };
+  const _oldAddLot = () => modal(`<h2>Новый лот для автовыдачи</h2><p class="muted">После сохранения загрузите товар, если выбран список.</p>${lotForm({ mode: "fifo" })}`,
     "Сохранить", async f => { await api("POST", "/api/delivery", { ...read(f), enabled: true }); toast("Лот добавлен"); go("delivery"); });
   root.querySelectorAll("[data-edit]").forEach(b => (b.onclick = () => {
     const l = lots.find(x => x.id === +b.dataset.edit);
@@ -1301,23 +1429,53 @@ pages.subscription = async root => {
   }
   if (sub.offline) statusCard += `<p class="warn-text small" style="margin-top:10px">Сейчас нет связи с сервером лицензий, показан последний известный статус. ${esc(sub.offline_error || "")}</p>`;
 
+  // крупная карточка текущего доступа, как у Pulse
+  const curIcon = sub.active ? ICON.check : ICON.warn;
+  const curState = sub.active ? (sub.source === "trial" ? "trial" : "active") : "off";
+  const curTitle = sub.active ? (sub.source === "trial" ? "Пробный период" : "Подписка активна") : "Подписка неактивна";
+  const curSub = sub.active
+    ? `Осталось ${sub.days_left} ${plural(sub.days_left, "день", "дня", "дней")} · действует до ${fmt(sub.until)}`
+    : "Плагины по подписке не принимают новые заказы. Активируйте код ниже.";
+
+  const feats = ["Автовыдача товаров", "Автоответчик и приветствия", "ИИ-ответы покупателям", "Аренда Steam с бонусами",
+    "Telegram Stars и подарки", "Выдача через поставщиков", "Коды Steam Guard и почты", "Прокси для аккаунтов"];
+
   root.innerHTML = `
-    <div class="page-head"><h1>Подписка</h1><button class="btn" id="sub-refresh">Обновить статус</button></div>
-    ${statusCard}
+    <div class="page-head"><h1>Подписка</h1><button class="btn" id="sub-refresh"><span class="btn-ic">${ICON.sync}</span>Обновить статус</button></div>
+    <div class="muted small" style="margin:-8px 0 18px">Управляйте подпиской и доступом к плагинам</div>
+
+    <div class="sub-current ${curState}">
+      <div class="sub-cur-icon">${curIcon}</div>
+      <div><div class="muted small" style="letter-spacing:.06em;text-transform:uppercase">Текущий доступ</div>
+        <div class="sub-cur-title">${curTitle}</div>
+        <div class="muted small">${curSub}</div></div>
+      ${sub.active ? `<div class="sub-cur-days"><b class="neon">${sub.days_left}</b><span class="muted small">${plural(sub.days_left, "день", "дня", "дней")}</span></div>` : ""}
+    </div>
+    ${sub.offline ? `<p class="warn-text small" style="margin-top:10px">Сейчас нет связи с сервером лицензий, показан последний известный статус.</p>` : ""}
+
+    <div class="sub-grid">
+      <section class="panel">
+        <div class="panel-head"><h2>${ICON.key} Активировать код</h2></div>
+        <p class="muted" style="margin:-6px 0 14px">Купите подписку на FunPay, получите код и введите его здесь. Код активируется один раз и привязывается к этому серверу.</p>
+        <form id="act-form" class="sub-activate"><input id="sub-code" placeholder="KSA-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false"><button class="btn primary">Активировать</button></form>
+        <p id="sub-msg" class="error" hidden></p>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>${ICON.bolt} Что входит в подписку</h2></div>
+        <div class="feat-list">${feats.map(f => `<div class="feat"><span class="feat-ic">${ICON.check}</span>${f}</div>`).join("")}</div>
+      </section>
+    </div>
+
     <section class="panel" style="margin-top:16px">
-      <h2>Активировать код</h2>
-      <p class="muted" style="margin:4px 0 14px">Купите подписку на FunPay, получите код и введите его здесь. Код активируется один раз и привязывается к этому серверу — при переезде на другой хост он не переносится.</p>
-      <form id="act-form" class="sub-activate"><input id="sub-code" placeholder="KSA-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false"><button class="btn primary">Активировать</button></form>
-      <p id="sub-msg" class="error" hidden></p>
-    </section>
-    <section class="panel" style="margin-top:16px">
-      <h2>Купить подписку</h2>
-      <p class="muted" style="margin:4px 0 14px">После оплаты код придёт вам в чат FunPay автоматически.</p>
-      <div class="plan-grid">${plans.map(([m, name, price]) => `
-        <div class="plan"><div class="plan-name">${name}</div><div class="plan-price">${price} ₽</div>
-          ${LOTS[m] ? `<a class="btn primary" href="${esc(LOTS[m])}" target="_blank" rel="noopener">Купить на FunPay</a>`
-                    : `<span class="muted small">Ссылка на лот не задана</span>`}</div>`).join("")}</div>
-      ${state.demo ? "" : `<p class="muted small" style="margin-top:12px">Ссылки на ваши лоты задаются в файле сервера (см. README).</p>`}
+      <div class="panel-head"><h2>${ICON.wallet} Купить подписку</h2><span class="muted small">после оплаты код придёт в чат FunPay</span></div>
+      <div class="plan-grid">${plans.map(([m, name, price], i) => `
+        <div class="plan ${i === 1 ? "featured" : ""}">
+          ${i === 1 ? `<div class="plan-badge">Выгодно</div>` : ""}
+          <div class="plan-name">${name}</div>
+          <div class="plan-price">${price.split(".")[0]} <small>₽</small></div>
+          <div class="muted small" style="margin-bottom:14px">${Math.round(+price / m)} ₽/мес</div>
+          ${LOTS[m] ? `<a class="btn ${i === 1 ? "primary" : ""}" href="${esc(LOTS[m])}" target="_blank" rel="noopener">Купить на FunPay</a>`
+                    : `<span class="muted small">Ссылка не задана</span>`}</div>`).join("")}</div>
     </section>`;
 
   $("#sub-refresh").onclick = async e => { e.target.disabled = true; try { await api("POST", "/api/subscription/refresh"); go("subscription"); } catch (err) { toast(err.message, true); e.target.disabled = false; } };
@@ -1342,9 +1500,18 @@ pages.settings = async root => {
   const [s, st, raised, backups] = await Promise.all([api("GET", "/api/settings"), api("GET", "/api/status"), api("GET", "/api/raise"), api("GET", "/api/backups").catch(() => [])]);
   const tgEvents = [["tg_on_attention", "Заказ требует проверки"], ["tg_on_help", "Покупатель вызвал продавца"], ["tg_on_account", "Аккаунт FunPay перестал работать"],
                     ["tg_on_stock", "Закончился товар автовыдачи"], ["tg_on_review", "Новый отзыв"], ["tg_on_blacklist", "Заказ от покупателя из чёрного списка"], ["tg_on_order", "Каждый новый заказ"]];
+  const groups = [
+    ["conn", "Подключение", ICON.globe, ["sec-server", "sec-connect"]],
+    ["notif", "Уведомления", ICON.bell, ["sec-tg"]],
+    ["auto", "Автоматизация", ICON.bolt, ["sec-raise", "sec-bl", "sec-profit"]],
+    ["backup", "Резервные копии", ICON.box, ["sec-backup"]],
+  ];
   root.innerHTML = `
     <div class="page-head"><h1>Настройки</h1></div>
-    <div class="settings">
+    <div class="muted small" style="margin:-8px 0 18px">Подключение, уведомления и работа Lotus</div>
+    <div class="settings-layout">
+      <nav class="settings-nav">${groups.map((g, i) => `<a data-sg="${g[0]}" class="${i === 0 ? "on" : ""}"><span class="sn-ic">${g[2]}</span>${g[1]}</a>`).join("")}</nav>
+      <div class="settings-content">
       <section class="panel" id="sec-tg">
         <h2>Уведомления в Telegram</h2>
         <p class="muted" style="margin:4px 0 14px">Сигналы на телефон, даже когда приложение закрыто. Управления через Telegram нет — только уведомления.</p>
@@ -1394,11 +1561,22 @@ pages.settings = async root => {
         <button class="btn" id="backup-now" style="margin-top:4px">Сделать копию сейчас</button>
       </section>
 
-      <section class="panel"><h2 style="margin-bottom:14px">Подключение</h2>
+      <section class="panel" id="sec-connect"><h2 style="margin-bottom:14px">Подключение к серверу</h2>
         <div class="row" style="border-top:0"><div><div>${esc(state.server)}</div><p>Версия сервера ${esc(st.version)}, работает ${Math.floor(st.uptime / 3600)} ч ${Math.floor(st.uptime % 3600 / 60)} мин</p></div>
           <button class="btn" id="logout">${state.demo ? "Выйти из демо" : "Отключиться"}</button></div>
       </section>
-    </div>`;
+    </div></div>`;
+
+  // под-меню настроек: показываем секции выбранной группы
+  let curGroup = "conn";
+  const showGroup = g => {
+    curGroup = g;
+    const grp = groups.find(x => x[0] === g);
+    root.querySelectorAll(".settings-content > section").forEach(sec => { sec.style.display = grp[3].includes(sec.id) ? "" : "none"; });
+    root.querySelectorAll("[data-sg]").forEach(a => a.classList.toggle("on", a.dataset.sg === g));
+  };
+  root.querySelectorAll("[data-sg]").forEach(a => a.onclick = () => showGroup(a.dataset.sg));
+  showGroup("conn");
 
   root.querySelectorAll("section[id^=sec-]").forEach(sec => { const b = $(".save", sec); if (b) b.onclick = () => saveSection(sec); });
   $("#tg-test").onclick = async e => {
