@@ -1,307 +1,805 @@
-// Демо-режим: имитирует ответы воркера, чтобы посмотреть интерфейс без сервера.
-const Demo = (() => {
-  let seed = 7;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const pick = a => a[Math.floor(rnd() * a.length)];
+:root {
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  /* Почти чёрный фон, как у Pulse — так неон читается ярче */
+  --ink: #0A0710;       /* фон приложения */
+  --panel: #120D1C;     /* панели — чуть светлее фона */
+  --panel-soft: #171020;/* вложенные блоки */
+  --panel-2: #1C1428;   /* поля, наведение */
+  --line: #241B33;      /* границы */
+  --line-soft: #1E1629; /* мягкие внутренние линии */
+  --text: #F2EEF9;
+  --muted: #8D83A6;
+  /* НЕОНОВЫЙ фиолетовый акцент */
+  --gold: #BC6CFF;      /* основной неон (имя оставлено для совместимости) */
+  --neon: #C77DFF;      /* яркий неон для свечения */
+  --gold-dim: rgba(188, 108, 255, .13);
+  --violet: #A855F7;
+  --mint: #4FE0A8;      /* ярче зелёный */
+  --coral: #FF7A6B;
+  --sky: #7C9BFF;
+  --amber: #F5BE52;
+  --ui: "Inter", "Manrope", "Segoe UI", system-ui, sans-serif;
+  --display: "Space Grotesk", "Inter", "Segoe UI", sans-serif;
+  --r-sm: 10px;
+  --r-md: 16px;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.22);
+  --shadow-lg: 0 2px 6px rgba(0,0,0,.4), 0 18px 44px rgba(0,0,0,.35);
+  --glow: 0 0 20px rgba(199,125,255,.45);
+}
 
-  const accounts = [
-    { id: 1, name: "Основной", username: "NightTrader", balance: 48210.5, currency: "₽", status: "ok", error: null, last_sync: Date.now() / 1000 - 90 },
-    { id: 2, name: "Скины", username: "skinbox_de", balance: 17340, currency: "₽", status: "ok", error: null, last_sync: Date.now() / 1000 - 140 },
-    { id: 3, name: "Запасной", username: "reserve_acc", balance: 2105, currency: "₽", status: "error", error: "golden_key недействителен: FunPay не узнал аккаунт", last_sync: Date.now() / 1000 - 3600 },
-  ];
-  const lots = [
-    ["Telegram Stars, 500 шт, быстрая выдача", 740], ["Steam ключ Elden Ring", 1890], ["CS2 AK-47 | Redline (FT)", 2350],
-    ["Пополнение Steam 1000 ₽", 1080], ["Discord Nitro 1 месяц", 390], ["Robux 800 через Game Pass", 610],
-    ["Аренда аккаунта Dota 2, 24 часа", 250], ["Brawl Stars гемы 360", 520], ["Spotify Premium 3 месяца", 470],
-  ];
-  const buyers = ["m1ster", "xoxo_kate", "dimon228", "LuckyShot", "nevermore", "artemka", "sonya.k", "Rust_King", "vlad0s", "hamster"];
+/* глубина фона: неоновое свечение сверху-справа */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(55% 45% at 85% -8%, rgba(188,108,255,.14), transparent 62%),
+    radial-gradient(45% 38% at 5% 8%, rgba(124,155,255,.05), transparent 58%);
+}
+#app, #modal-root { position: relative; z-index: 1; }
 
-  const orders = [];
-  const now = Date.now() / 1000;
-  for (let d = 0; d < 90; d++) {
-    const n = Math.max(0, Math.round(3 + rnd() * 6 - d / 30 + (d % 7 === 5 ? 3 : 0)));
-    for (let i = 0; i < n; i++) {
-      const [desc, price] = pick(lots);
-      const acc = rnd() < .62 ? accounts[0] : accounts[1];
-      const st = d === 0 && i < 2 ? "paid" : rnd() < .05 ? "refunded" : "closed";
-      orders.push({
-        id: (Math.floor(rnd() * 0xFFFFFF)).toString(16).toUpperCase().padStart(8, "A"),
-        account_id: acc.id, account: acc.name, ts: now - d * 86400 - rnd() * 80000,
-        buyer: pick(buyers), description: desc, amount: price, currency: "₽", status: st,
-        cost: Math.round(price * (0.45 + rnd() * 0.2)),
-      });
-    }
-  }
-  orders.sort((a, b) => b.ts - a.ts);
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+html, body { height: 100%; margin: 0; }
+* { -webkit-font-smoothing: antialiased; }
+body {
+  background: var(--ink);
+  color: var(--text);
+  font: 14px/1.5 var(--ui);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
+h1 { font-size: 24px; }
+h2 { font-size: 17px; }
+h3 { font-size: 15px; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.error { color: var(--coral); font-size: 13px; }
+code, pre { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+pre {
+  background: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 10px 12px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; color: var(--gold);
+}
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid var(--ink); }
 
-  // Каталог плагинов (как на сервере: core/catalog.py). Готов пока только «Крупные заказы».
-  const plugins = [
-    { id: "autodelivery", ready: true, name: "Автовыдача", version: "1.0", category: "Основное", enabled: true, can_test: false, can_dry_run: true,
-      description: "Отправляет покупателю товар сразу после оплаты: текст или уникальную строку из списка.",
-      settings: [], config: {}, secrets_set: {}, missing: [], tasks: { done: 152, pending: 0, attention: 0 } },
-    { id: "rent_steam", ready: true, name: "Аренда Steam", version: "1.0", category: "Аренда аккаунтов", enabled: true, can_test: false, can_dry_run: true,
-      description: "Сдаёт Steam-аккаунты в аренду: выдача, коды Guard, продление отдельным лотом, смена пароля после аренды.",
-      settings: [{key:"extend_offer_id",label:"ID лота продления на FunPay",type:"text",required:true,hint:"Создайте выключенный лот «Продление», ID из ссылки offer?id=..."},
-                 {key:"extend_command",label:"Команда продления",type:"text",default:"!продлить"},
-                 {key:"remind_before_min",label:"Напоминать за, минут",type:"number",default:15},
-                 {key:"hide_lot_on_rent",label:"Скрывать лот аккаунта на время аренды",type:"bool",default:true,hint:"Если указан ID лота у аккаунта, он прячется на время аренды."},
-                 {key:"onlypc_check",label:"Проверка OnlyPC (фото из клуба)",type:"bool",default:false,hint:"После оплаты бот просит фото из компьютерного клуба и ждёт вашего решения."}],
-      config: { extend_offer_id: "3910042", extend_command: "!продлить", remind_before_min: 15, hide_lot_on_rent: true, onlypc_check: false }, secrets_set: {}, missing: [], tasks: { done: 64, pending: 0, attention: 0 } },
-    { id: "autosmm", ready: true, name: "AutoSMM", version: "1.0", category: "Выдача через поставщиков", enabled: false, can_test: true, can_dry_run: true,
-      description: "Продажа SMM-услуг через SMM-панели (TwiBoost и совместимые). Код услуги #1-1234 в конце описания лота.",
-      settings: [
-        {key:"url1",label:"Поставщик 1 · адрес API",type:"text",default:"https://twiboost.com/api/v2",hint:"Например: https://twiboost.com/api/v2"},
-        {key:"key1",label:"Поставщик 1 · API-ключ",type:"secret",hint:"В панели: раздел API. Хранится в зашифрованном виде."},
-        {key:"url2",label:"Поставщик 2 · адрес API",type:"text",default:"",hint:"Необязательно. Для кодов #2-1234."},
-        {key:"key2",label:"Поставщик 2 · API-ключ",type:"secret",hint:"Необязательно."},
-        {key:"max_price",label:"Не заказывать дороже, $ за заказ",type:"number",default:10,hint:"0 — без лимита."},
-        {key:"ask_link",label:"Запрос ссылки",type:"textarea",default:"Спасибо за заказ! Пришлите ссылку, куда выполнить накрутку {quantity} шт."},
-        {key:"confirm",label:"Подтверждение ссылки",type:"textarea",default:"Проверьте ссылку: {link}\nВсё верно? + если да, − если изменить."},
-        {key:"done_text",label:"Накрутка завершена",type:"textarea",default:"Накрутка выполнена полностью, спасибо!"}
-      ],
-      config: {url1:"https://twiboost.com/api/v2",url2:"",max_price:10,ask_link:"Спасибо за заказ! Пришлите ссылку, куда выполнить накрутку {quantity} шт.",confirm:"Проверьте ссылку: {link}\nВсё верно? + если да, − если изменить.",done_text:"Накрутка выполнена полностью, спасибо!"},
-      secrets_set:{key1:false,key2:false}, missing:[], tasks:{done:0,pending:0,attention:0} },
-    { id: "autoresponder", ready: true, name: "Автоответчик", version: "1.0", category: "Покупатели", enabled: true, can_test: false, can_dry_run: false,
-      description: "Отвечает на сообщения покупателей по ключевым словам. Правила: «слово = ответ», по строке на правило.",
-      settings: [
-        {key:"rules",label:"Правила",type:"textarea",default:"",hint:"По строке: ключевые слова = ответ. Несколько слов через | . Регистр не важен."},
-        {key:"cooldown_min",label:"Не повторять ответ чаще, минут",type:"number",default:10,hint:"Защита от спама."},
-        {key:"first_only",label:"Отвечать только на первое совпадение",type:"bool",default:true}
-      ],
-      config:{rules:"привет | здравствуй = Здравствуйте! Товар выдаётся автоматически после оплаты.\nгарантия | возврат = Гарантия 24 часа, при проблеме вернём деньги.",cooldown_min:10,first_only:true},
-      secrets_set:{}, missing:[], tasks:{done:0,pending:0,attention:0} },
-    { id: "offline_activite", ready: true, name: "Offline Activite", version: "1.0", category: "Steam", enabled: false, can_test: false, can_dry_run: false,
-      description: "Выдаёт покупателю код Steam Guard по команде !guard для настроенных аккаунтов.",
-      settings:[{key:"command",label:"Команда для кода",type:"text",default:"!guard"},{key:"only_buyers",label:"Отвечать только покупателям этого аккаунта",type:"bool",default:true},{key:"reply",label:"Текст с кодом",type:"text",default:"Код Steam Guard: {code}"}],
-      config:{command:"!guard",only_buyers:true,reply:"Код Steam Guard: {code} (действует ~30 секунд)"}, secrets_set:{}, missing:[], tasks:{done:0,pending:0,attention:0} },
-    { id: "email_code", ready: true, name: "EmailCode", version: "1.0", category: "Steam", enabled: false, can_test: true, can_dry_run: false,
-      description: "Присылает покупателю код подтверждения из почты (IMAP) по команде !code.",
-      settings:[{key:"imap_host",label:"IMAP-сервер",type:"text",default:"imap.gmail.com",hint:"Например: imap.gmail.com, imap.mail.ru"},{key:"email",label:"Почта",type:"text",default:""},{key:"password",label:"Пароль (пароль приложения)",type:"secret",hint:"Создайте пароль приложения в настройках почты."},{key:"command",label:"Команда для кода",type:"text",default:"!code"},{key:"fresh_min",label:"Искать код в письмах за, минут",type:"number",default:10},{key:"only_buyers",label:"Отвечать только покупателям",type:"bool",default:true}],
-      config:{imap_host:"imap.gmail.com",email:"",command:"!code",fresh_min:10,only_buyers:true}, secrets_set:{password:false}, missing:[], tasks:{done:0,pending:0,attention:0} },
-    { id: "ai_assistant", ready: true, name: "ИИ-ответы", version: "1.0", category: "Покупатели", enabled: false, can_test: true, can_dry_run: true,
-      description: "ИИ отвечает на лёгкие вопросы покупателей по лоту. Про оплату и возвраты — передаёт продавцу.",
-      settings:[
-        {key:"base_url",label:"Адрес API",type:"text",default:"https://api.openai.com/v1",hint:"OpenAI-совместимый API."},
-        {key:"api_key",label:"API-ключ",type:"secret",hint:"Ключ провайдера ИИ. Платится по использованию."},
-        {key:"model",label:"Модель",type:"text",default:"gpt-4o-mini",hint:"Берите недорогую модель."},
-        {key:"faq",label:"Памятка для ИИ (FAQ)",type:"textarea",default:"",hint:"Факты о товарах: сроки, совместимость, активация."},
-        {key:"daily_limit",label:"Ответов одному покупателю в день",type:"number",default:5,hint:"0 — без лимита."},
-        {key:"stop_words",label:"Стоп-слова (ИИ молчит)",type:"text",default:"возврат, чарджбэк, жалоба",hint:"Через запятую."}
-      ],
-      config:{base_url:"https://api.openai.com/v1",model:"gpt-4o-mini",faq:"Выдача автоматическая, сразу после оплаты. Гарантия 24 часа. Если товар не пришёл — напишите !help.",daily_limit:5,stop_words:"возврат, чарджбэк, жалоба"},
-      secrets_set:{api_key:false}, missing:[], tasks:{done:0,pending:0,attention:0} },
-    { id: "big_orders", ready: true, name: "Крупные заказы", version: "1.0", category: "Уведомления", enabled: true, can_test: false, can_dry_run: true,
-      description: "Пишет в журнал, когда приходит заказ дороже заданной суммы.",
-      settings: [{ key: "threshold", label: "Сумма от, ₽", type: "number", default: 1000 },
-                 { key: "note", label: "Пометка в журнале", type: "text", default: "Крупный заказ" }],
-      config: { threshold: 1500, note: "Крупный заказ" }, secrets_set: {}, missing: [], tasks: { done: 389, pending: 0, attention: 0 } },
-    ...[{"id": "approute", "ready": false, "name": "AppRoute Reseller", "description": "Покупает товар или пополнение в AppRoute после оплаты и пишет покупателю статус.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ AppRoute"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "lzt_market", "ready": false, "name": "Lolz Market", "description": "Покупка и автовыдача аккаунтов всех категорий через LZT Market.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ LZT Market"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_tt", "ready": false, "name": "Auto TT", "description": "Покупка и автовыдача TikTok-аккаунтов через LZT Market.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ LZT Market"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_ai_accounts", "ready": false, "name": "AutoAIAccounts", "description": "Покупка и выдача AI-аккаунтов через LZT Market.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ LZT Market"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "lis_skins", "ready": false, "name": "LIS-SKINS Market", "description": "Выдача скинов CS2, Dota 2 и Rust через LIS-SKINS по точному market name.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ LIS-SKINS"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_steam_ns", "ready": false, "name": "AutoSteamNS", "description": "Пополнение Steam через NSGifts по заказам FunPay.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ NSGifts"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "nervixy", "ready": false, "name": "Nervixy", "description": "Пополнение Steam по логину: сумма из количества в заказе, с подтверждением покупателя.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ Nervixy"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_smm", "ready": false, "name": "AutoSMM", "description": "Продажа SMM-услуг через подключённые SMM-панели.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ SMM-панели"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_robux", "ready": false, "name": "AutoRobux", "description": "Выдача Robux через Roblox Game Pass.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "способ покупки Game Pass (аккаунт Roblox или поставщик)"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "vip_roblox", "ready": false, "name": "VIP Roblox", "description": "Работа с VIP-серверами Roblox по заказам.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "способ выдачи VIP-серверов"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_discord_boost", "ready": false, "name": "AutoDiscordBoost", "description": "Discord boost по заказам.", "category": "Выдача через поставщиков", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ поставщика бустов"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "rent_steam", "ready": false, "name": "RentSteam", "description": "Аренда Steam-аккаунтов: выдача, отсчёт срока, смена пароля по окончании.", "category": "Аренда аккаунтов", "needs": ["отправка сообщений покупателю на FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "dota2_rental", "ready": false, "name": "Dota 2 Rental", "description": "Аренда Dota 2 аккаунтов с выдачей логина, пароля и Steam Guard.", "category": "Аренда аккаунтов", "needs": ["отправка сообщений покупателю на FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "kosell_rental", "ready": false, "name": "KoSell Rental", "description": "Аренда Steam-аккаунтов через KoSell.", "category": "Аренда аккаунтов", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ KoSell"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "valorant_rental", "ready": false, "name": "Valorant Rental", "description": "Выдача и сроки аренды аккаунтов Valorant с ручным подтверждением сброса доступа.", "category": "Аренда аккаунтов", "needs": ["отправка сообщений покупателю на FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "nft_gift_rental", "ready": false, "name": "NFT Gift Rental", "description": "Аренда Telegram Gifts и NFT через MarketApp.", "category": "Аренда аккаунтов", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ MarketApp"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_stars", "ready": false, "name": "AutoStars", "description": "Автовыдача Telegram Stars по заказам.", "category": "Telegram", "needs": ["отправка сообщений покупателю на FunPay", "документация API и ключ сервиса покупки Stars (например, Fragment)"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_gift", "ready": false, "name": "AutoGift", "description": "Автоматическая отправка Telegram Stars Gifts по заказам.", "category": "Telegram", "needs": ["отправка сообщений покупателю на FunPay", "Telegram-аккаунт для отправки подарков"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "gift_radar", "ready": false, "name": "Gift Radar", "description": "Цены Telegram-подарков на Portals, MRKT и Getgems, расчёт прибыли и покупки на Portals.", "category": "Telegram", "needs": ["документация API и ключ Portals, MRKT и Getgems"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "offline_activite", "ready": false, "name": "Offline Activite", "description": "Выдаёт покупателю код Steam Guard по команде !guard для настроенных аккаунтов.", "category": "Steam", "needs": ["отправка сообщений покупателю на FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "email_code", "ready": false, "name": "EmailCode", "description": "Получает коды подтверждения из почты через IMAP и отправляет покупателю.", "category": "Steam", "needs": ["отправка сообщений покупателю на FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "trade_manager", "ready": false, "name": "TradeManager", "description": "Включает и выключает лоты по расписанию.", "category": "Лоты", "needs": ["управление лотами FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "auto_dump", "ready": false, "name": "AutoDump", "description": "Корректирует цены по публичному рынку FunPay.", "category": "Лоты", "needs": ["управление лотами FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "copy_lots", "ready": false, "name": "CopyLots", "description": "Копирует лоты между вашими аккаунтами FunPay.", "category": "Лоты", "needs": ["управление лотами FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}, {"id": "autoresponder", "ready": true, "name": "Автоответчик", "version": "2.0", "description": "Приветствие, ответы по ключевым словам, просьба об отзыве и ответы под отзывами.", "category": "Покупатели", "needs": ["отправка сообщений покупателю на FunPay"], "enabled": true, "can_test": false, "can_dry_run": false, "tasks": {"done": 12, "attention": 0, "pending": 0}, "secrets_set": {}, "missing": [], "images_set": {"greet_photo": true, "ask_review_photo": false}, "config": {"greet_enabled": true, "greet_text": "Здравствуйте, {buyer}!", "ask_review_enabled": true, "ask_review_text": "Оставьте отзыв, {buyer}!", "review_reply_enabled": false}, "settings": [{"key":"greet_enabled","label":"Приветствие на первое сообщение","type":"bool","default":true},{"key":"greet_text","label":"Текст приветствия","type":"textarea","default":""},{"key":"greet_photo","label":"Фото к приветствию (необязательно)","type":"image","hint":"Картинка отправится вместе с приветствием."},{"key":"ask_review_enabled","label":"Просить отзыв после подтверждения заказа","type":"bool","default":true},{"key":"ask_review_text","label":"Текст просьбы об отзыве","type":"textarea","default":""},{"key":"ask_review_photo","label":"Фото к просьбе об отзыве (необязательно)","type":"image","hint":"Например, картинка-инструкция."}]}, {"id": "auto_ticket", "ready": false, "name": "AutoTicket", "description": "Создаёт тикет в поддержку FunPay по просроченным заказам.", "category": "Покупатели", "needs": ["создание тикетов в поддержке FunPay"], "enabled": false, "settings": [], "config": {}, "secrets_set": {}, "missing": [], "can_test": false, "can_dry_run": false, "tasks": {"done": 0, "attention": 0, "pending": 0}}],
-  ];
-  const tasks = [
-    { id: 40, plugin_id: "big_orders", plugin_name: "Крупные заказы", order_id: "B0C2E118", status: "done", attempts: 1, error: null,
-      result: null, updated: now - 640, buyer: "Rust_King", description: "CS2 AK-47 | Redline (FT)", amount: 2350, currency: "₽" },
-    { id: 39, plugin_id: "big_orders", plugin_name: "Крупные заказы", order_id: "A91F02C4", status: "skipped", attempts: 1, error: null,
-      result: null, updated: now - 95, buyer: "xoxo_kate", description: "Telegram Stars, 500 шт, быстрая выдача", amount: 740, currency: "₽" },
-  ];
+.wordmark {
+  font-family: var(--display); font-weight: 700; font-size: 20px; color: var(--gold);
+  letter-spacing: .02em;
+}
+.wordmark.big { font-size: 34px; margin-bottom: 18px; }
 
-  let offlineAccs = null;
-  let sub = { active: true, source: "trial", until: now + 3*86400, days_left: 3, trial_until: now + 3*86400, offline: false, configured: true };
-  let settings = {
-    sync_interval_min: 5, chat_interval_sec: 10, notify_new_orders: true,
-    greeting_enabled: true, greeting_text: "Здравствуйте! Спасибо, что написали. Отвечу в ближайшее время. Если нужна срочная помощь, напишите !help",
-    help_enabled: true, help_command: "!help", help_reply: "Продавец получил уведомление и скоро ответит.",
-    review_thanks_enabled: true, review_thanks_min: 5, review_thanks_text: "Спасибо за отзыв, {buyer}! Будем рады видеть вас снова.",
-    raise_enabled: true, raise_interval_min: 120, commission_pct: 0, blacklist: ["scam_master", "refund_hunter"],
-    tg_token: "", tg_token_set: true, tg_chat_id: "123456789",
-    tg_on_attention: true, tg_on_account: true, tg_on_help: true, tg_on_review: true, tg_on_stock: true, tg_on_blacklist: true, tg_on_order: false,
-  };
-  const chats = [
-    { account_id: 1, chat_id: "91201", name: "xoxo_kate", account: "Основной", unread: 1, last_ts: now - 70, last_text: "А можно сразу два?" },
-    { account_id: 1, chat_id: "91188", name: "Rust_King", account: "Основной", unread: 0, last_ts: now - 700, last_text: "Спасибо за отзыв, Rust_King! Будем рады видеть вас снова." },
-    { account_id: 2, chat_id: "88410", name: "dimon228", account: "Скины", unread: 1, last_ts: now - 2400, last_text: "!help скин не пришёл" },
-    { account_id: 1, chat_id: "91002", name: "sonya.k", account: "Основной", unread: 0, last_ts: now - 86400, last_text: "Всё пришло, спасибо" },
-  ];
-  const msgs = {
-    "91201": [
-      { id: 1, author_id: 0, text: "Покупатель xoxo_kate оплатил заказ #A91F02C4. Telegram Stars, 500 шт, быстрая выдача.", ts: now - 400, mine: 0 },
-      { id: 2, author_id: 777, text: "Спасибо за покупку, xoxo_kate! Ваш товар:\nSTARS-7F3K-PQ21", ts: now - 395, mine: 1 },
-      { id: 3, author_id: 501, text: "Здравствуйте, всё пришло 👍", ts: now - 200, mine: 0 },
-      { id: 4, author_id: 501, text: "А можно сразу два?", ts: now - 70, mine: 0 },
-    ],
-    "88410": [
-      { id: 1, author_id: 502, text: "Здравствуйте", ts: now - 2600, mine: 0 },
-      { id: 2, author_id: 777, text: "Здравствуйте! Спасибо, что написали. Отвечу в ближайшее время. Если нужна срочная помощь, напишите !help", ts: now - 2590, mine: 1 },
-      { id: 3, author_id: 502, text: "!help скин не пришёл", ts: now - 2400, mine: 0 },
-      { id: 4, author_id: 777, text: "Продавец получил уведомление и скоро ответит.", ts: now - 2395, mine: 1 },
-    ],
-  };
-  let onlypcJobs = [
-    { order_id: "RENT9001", buyer: "clubkid", account_id: 1, got_photo: true, created: now - 300 },
-    { order_id: "RENT9002", buyer: "newguy", account_id: 1, got_photo: false, created: now - 1200 },
-  ];
-  const rentAccounts = [
-    { login: "csgo_rent_01", title: "КС Прайм 2000ч", password: "Kp9xLm2Qwe", has_mafile: true, enabled: true, state: "rented", rented_until: now + 5400, rented_by: "renter_max", order_id: "RENT7788", offer_id: "3910101", extend_offer_id: "3911001", onlypc_check: true, hide_lot_on_rent: null, review_bonus_min_hours: "" },
-    { login: "csgo_rent_02", title: "КС Прайм 2000ч", password: "Zt4hNb8Rty", has_mafile: true, enabled: true, state: "free", rented_until: null, rented_by: null, order_id: null },
-    { login: "dota_rent_01", title: "Дота Калибровка", password: "Wq1vCx7Uio", has_mafile: false, enabled: true, state: "needs_reset", rented_until: null, rented_by: null, order_id: null },
-    { login: "csgo_rent_03", password: "Mn5jDk3Poi", has_mafile: true, enabled: false, state: "free", rented_until: null, rented_by: null, order_id: null },
-  ];
-  const delivery = [
-    { id: 1, phrase: "Telegram Stars, 500", mode: "fifo", text: "", cost: 420, enabled: 1, stock: 37, sold: 152 },
-    { id: 2, phrase: "Steam ключ Elden Ring", mode: "fifo", text: "Ваш ключ: {item}\nАктивация: Steam → Игры → Активировать продукт", cost: 1350, enabled: 1, stock: 0, sold: 18 },
-    { id: 3, phrase: "Аренда аккаунта Dota 2", mode: "text", text: "Инструкция по входу отправлю в течение 5 минут. {buyer}, не меняйте пароль!", cost: 0, enabled: 0, stock: 0, sold: 0 },
-  ];
-  const t = s => now - s;
-  const events = [
-    { id: 6, ts: t(95), level: "order", text: "Новый заказ #A91F02C4 от xoxo_kate: 740 ₽" },
-    { id: 5, ts: t(610), level: "order", text: "[Крупные заказы] Крупный заказ: #B0C2E118 на 2350 ₽ (Скины)" },
-    { id: 4, ts: t(640), level: "order", text: "Новый заказ #B0C2E118 от Rust_King: 2350 ₽" },
-    { id: 3, ts: t(3600), level: "error", text: "Запасной: golden_key недействителен: FunPay не узнал аккаунт" },
-    { id: 2, ts: t(7200), level: "info", text: "Плагин big_orders включён" },
-    { id: 1, ts: t(9000), level: "info", text: "Воркер запущен, версия 0.1.0" },
-  ];
+/* ---------- кнопки и поля ---------- */
+.btn {
+  font: 600 14px var(--ui); color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 16px; cursor: pointer;
+  transition: background .18s var(--ease), border-color .18s var(--ease), transform .12s var(--ease), box-shadow .18s var(--ease);
+}
+.btn:active { transform: scale(.97); }
+.btn:hover { border-color: #3A5285; }
+.btn.primary { background: linear-gradient(135deg, var(--violet), var(--sky)); color: #fff; border-color: transparent; box-shadow: 0 4px 18px rgba(168, 85, 247, .35); }
+.btn.primary:hover { filter: brightness(1.08); box-shadow: 0 6px 24px rgba(168, 85, 247, .5); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--text); }
+.btn.danger { color: var(--coral); }
+.btn.wide { width: 100%; }
+.btn:disabled { opacity: .55; cursor: default; }
 
-  function stats(days, account) {
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - days + 1);
-    const rows = orders.filter(o => o.ts >= start / 1000 && (!account || o.account_id === account));
-    const daily = [];
-    for (let i = 0; i < days; i++) {
-      const d = new Date(start); d.setDate(d.getDate() + i);
-      daily.push({ date: d.toISOString().slice(0, 10), revenue: 0, orders: 0, profit: 0, _d: d });
-    }
-    let revenue = 0, refunds = 0, count = 0, costs = 0;
-    const lots = {};
-    rows.forEach(o => {
-      if (o.status === "refunded") { refunds += o.amount; return; }
-      o.profit = o.amount - o.cost;
-      const idx = Math.floor((o.ts * 1000 - start) / 86400000);
-      if (daily[idx]) { daily[idx].revenue += o.amount; daily[idx].orders++; daily[idx].profit += o.profit; }
-      const l = lots[o.description] ||= { lot: o.description, orders: 0, revenue: 0, profit: 0 };
-      l.orders++; l.revenue += o.amount; l.profit += o.profit;
-      revenue += o.amount; costs += o.cost; count++;
-    });
-    return { days, revenue, orders: count, refunds, avg_check: count ? Math.round(revenue / count) : 0,
-             costs, commission: 0, commission_pct: 0, profit: revenue - costs,
-             top_lots: Object.values(lots).sort((a, b) => b.profit - a.profit).slice(0, 6),
-             daily: daily.map(({ _d, ...x }) => x), recent: rows.slice(0, 200) };
-  }
+input, textarea, select {
+  -webkit-user-select: text; user-select: text; pointer-events: auto; -webkit-app-region: no-drag;
+  width: 100%; font: 14px var(--ui); color: var(--text); background: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 12px; resize: vertical;
+}
+input, textarea, select { transition: border-color .18s var(--ease), box-shadow .18s var(--ease); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+label.field { display: block; margin-bottom: 14px; }
+label.field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 
-  return {
-    async request(method, path, body) {
-      await new Promise(r => setTimeout(r, 120));
-      const [p, q] = path.split("?");
-      const qs = new URLSearchParams(q || "");
-      if (p === "/api/status") return { version: "0.1.0-demo", uptime: 9000, accounts: 3, accounts_ok: 2, plugins_enabled: 2, attention: tasks.filter(t => t.status === "attention").length, unread: chats.filter(c => c.unread).length,
-        subscription: sub };
-      if (p === "/api/accounts" && method === "GET")
-        return { data: accounts.map(a => ({ ...a, orders_total: orders.filter(o => o.account_id === a.id).length })) };
-      if (p === "/api/accounts" && method === "POST") return { error: "В демо-режиме аккаунты не добавляются. Подключите свой сервер." };
-      if (p.startsWith("/api/accounts/") && method === "DELETE") return { error: "В демо-режиме аккаунты не удаляются." };
-      if (p.startsWith("/api/accounts/") && method === "PATCH") {
-        const a = accounts.find(x => x.id === +p.split("/")[3]); if (a) a.name = body.name; return { ok: true };
-      }
-      if (p === "/api/stats") return stats(+qs.get("days") || 30, +qs.get("account") || 0);
-      if (p === "/api/plugins" && method === "GET") return { data: plugins.filter((x, i) => plugins.findIndex(y => y.id === x.id) === i) };
-      if (p.endsWith("/enabled")) {
-        const pl = plugins.find(x => x.id === p.split("/")[3]);
-        if (!pl.ready) return { error: "Этот плагин ещё в разработке и пока не может быть включён" };
-        if (body.enabled && pl.missing.length) return { error: "Сначала заполните в настройках: " + pl.missing.join(", ") };
-        pl.enabled = body.enabled; return { ok: true };
-      }
-      if (p.endsWith("/test")) return p.includes("autosmm") ? { ok: true, message: "Поставщик 1: Баланс: 50.00 USD" } : p.includes("email_code") ? { ok: true, message: "Подключение работает. Свежих писем с кодом нет." } : p.includes("ai_assistant") ? { ok: true, message: "Работает. Модель ответила: тест" } : p.includes("lzt") ? { ok: false, message: "Не заполнено: API-токен LZT" } : { ok: true, message: "Ключ работает. Баланс: 184.20 $" };
-      if (p.endsWith("/dry-run")) {
-        const big = body.amount >= plugins[0].config.threshold;
-        return { ok: true, message: big ? "Отработал без ошибок" : "Пропущен плагином",
-                 log: big ? [`${plugins[0].config.note}: #TEST0001 на ${body.amount} ₽`] : [] };
-      }
-      if (p === "/api/tasks") return { data: tasks };
-      if (p.endsWith("/retry") || p.endsWith("/resolve")) {
-        const t = tasks.find(x => x.id === +p.split("/")[3]);
-        t.status = p.endsWith("/retry") ? "done" : "done"; t.error = null; t.result = p.endsWith("/retry") ? "AppRoute: заказ 5581290" : "Закрыто вручную";
-        plugins[0].tasks.attention = 0; return { ok: true };
-      }
-      if (p.endsWith("/config")) {
-        const pl = plugins.find(x => x.id === p.split("/")[3]);
-        pl.settings.forEach(st => {
-          if (st.type === "secret") { if (body[st.key]) pl.secrets_set[st.key] = true; if ((body.__clear__ || []).includes(st.key)) pl.secrets_set[st.key] = false; }
-          else if (st.key in body) pl.config[st.key] = body[st.key];
-        });
-        pl.missing = pl.settings.filter(st => st.required && (st.type === "secret" ? !pl.secrets_set[st.key] : !pl.config[st.key])).map(st => st.label);
-        if (pl.missing.length) pl.enabled = false;
-        return { ok: true };
-      }
-      if (p === "/api/subscription" && method === "GET") return sub;
-      if (p === "/api/subscription/refresh") return sub;
-      if (p === "/api/subscription/activate") {
-        const code = (body.code || "").trim().toUpperCase();
-        if (!/^KSA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return { error: "Код не найден. Проверьте, правильно ли он введён." };
-        const base = Math.max(sub.until, now); sub = { active: true, source: "paid", until: base + 30*86400, days_left: Math.round((base + 30*86400 - now)/86400), trial_until: sub.trial_until, offline: false, configured: true };
-        return sub;
-      }
-      if (p === "/api/settings" && method === "GET") return settings;
-      if (p === "/api/settings" && method === "PUT") {
-        const { tg_token, __clear__, ...rest } = body;
-        if (tg_token) rest.tg_token_set = true;
-        if (Array.isArray(rest.blacklist)) rest.blacklist = rest.blacklist.map(x => x.trim()).filter(Boolean);
-        return (settings = { ...settings, ...rest });
-      }
-      if (p === "/api/telegram/test") return { ok: true, message: "Тестовое сообщение отправлено — проверьте Telegram" };
-      if (p === "/api/backups" && method === "GET") return { data: [
-        { name: "kassa-20261003-030000.db", size: 48128, ts: now - 21600 },
-        { name: "kassa-20261002-030000.db", size: 47900, ts: now - 108000 },
-        { name: "kassa-20261001-030000.db", size: 47100, ts: now - 194400 },
-      ] };
-      if (p === "/api/backups" && method === "POST") return { ok: true, name: "kassa-20261003-091500.db" };
-      if (p === "/api/raise" && method === "GET") return { data: [{ account: "Основной", ts: now - 1800, report: ["Предложения подняты."] }, { account: "Скины", ts: now - 1800, report: ["Подождите 2 часа."] }] };
-      if (p === "/api/raise") return { "Основной": ["Подождите 1 час."], "Скины": ["Подождите 1 час."] };
-      if (p === "/api/chats") return { data: chats };
-      if (p === "/api/rent/top") return { data: { total: 4820, currency: "₽", count: 37,
-        games: [{game:"CS2 Prime 2000ч",count:18,sum:2140},{game:"Dota 2 Калибровка",count:12,sum:1680},{game:"GTA 5 Online",count:7,sum:1000}],
-        accounts: [{account:"csgo_rent_01",count:11,sum:1320},{account:"csgo_rent_02",count:9,sum:1080},{account:"dota_rent_01",count:8,sum:1120}] } };
-      if (p.startsWith("/api/chats/")) {
-        const id = decodeURIComponent(p.split("/")[4]);
-        const list = msgs[id] ||= [{ id: 1, author_id: 503, text: chats.find(c => c.chat_id === id)?.last_text || "", ts: now - 600, mine: 0 }];
-        const c = chats.find(x => x.chat_id === id);
-        if (method === "POST") { list.push({ id: list.length + 1, author_id: 777, text: body.text, ts: Date.now() / 1000, mine: 1 }); if (c) { c.last_text = body.text; c.last_ts = Date.now() / 1000; } }
-        if (c) c.unread = 0;
-        const ord = orders.find(o => o.buyer === (c && c.name));
-        return { messages: list, warning: null, order: ord ? { order_id: ord.id, lot: ord.description } : null };
-      }
-      if (p.startsWith("/api/offline/accounts")) {
-        offlineAccs ||= [{login:"cs2_offline_01",has_mafile:true},{login:"dota_offline_02",has_mafile:true}];
-        const login = decodeURIComponent(p.split("/")[4] || "");
-        if (method === "GET") return { data: offlineAccs };
-        if (method === "POST") { offlineAccs.push({login:body.login,has_mafile:!!body.mafile}); return { ok: true }; }
-        if (method === "DELETE") { offlineAccs = offlineAccs.filter(a=>a.login!==login); return { ok: true }; }
-      }
-      if (p === "/api/rent/onlypc" && method === "GET") return { data: onlypcJobs };
-      if (p.startsWith("/api/rent/onlypc/")) {
-        const id = p.split("/")[4];
-        onlypcJobs = onlypcJobs.filter(j => j.order_id !== id);
-        return { ok: true, message: p.endsWith("approve") ? "Аккаунт выдан" : "Отклонено" };
-      }
-      if (p.startsWith("/api/rent/accounts")) {
-        const seg = p.split("/"); const login = decodeURIComponent(seg[4] || "");
-        if (p === "/api/rent/accounts" && method === "GET") return { data: rentAccounts };
-        if (p === "/api/rent/accounts" && method === "POST") { rentAccounts.push({ login: body.login, password: body.password, has_mafile: !!body.mafile, enabled: true, state: "free", rented_until: null, rented_by: null, order_id: null }); return { ok: true }; }
-        const a = rentAccounts.find(x => x.login === login);
-        if (!a) return { error: "Аккаунт не найден" };
-        if (seg[5] === "test") return { ok: true, message: "Вход работает, пароль верный" };
-        if (seg[5] === "logout") return { ok: true, message: "Все сессии аккаунта завершены" };
-        if (seg[5] === "reset-done") { a.state = "free"; if (body.password) a.password = body.password; a.rented_by = null; a.rented_until = null; return { ok: true }; }
-        if (method === "PUT") { if ("enabled" in body) a.enabled = body.enabled; if (body.password) a.password = body.password; if (body.mafile) a.has_mafile = true; return { ok: true }; }
-        if (method === "DELETE") { rentAccounts.splice(rentAccounts.indexOf(a), 1); return { ok: true }; }
-      }
-      if (p === "/api/delivery" && method === "GET") return { data: delivery };
-      if (p === "/api/delivery" && method === "POST") { delivery.push({ id: delivery.length + 1, ...body, enabled: 1, stock: 0, sold: 0 }); return { ok: true }; }
-      if (p.startsWith("/api/delivery/")) {
-        const l = delivery.find(x => x.id === +p.split("/")[3]);
-        if (p.endsWith("/stock")) { if (method === "POST") { const n = body.lines.split("\n").filter(x => x.trim()).length; if (!n) return { error: "Список пуст: вставьте товары, по одному на строку" }; l.stock += n; return { added: n }; } l.stock = 0; return { ok: true }; }
-        if (method === "PUT") { Object.assign(l, body, { enabled: body.enabled ? 1 : 0 }); return { ok: true }; }
-        if (method === "DELETE") { delivery.splice(delivery.indexOf(l), 1); return { ok: true }; }
-      }
-      if (p === "/api/events") return { data: events };
-      if (p === "/api/sync") return { ok: true };
-      return { error: "Недоступно в демо-режиме" };
-    },
-  };
-})();
+.switch { position: relative; width: 40px; height: 22px; flex: none; }
+.switch input { opacity: 0; position: absolute; inset: 0; margin: 0; cursor: pointer; z-index: 1; }
+.switch i {
+  position: absolute; inset: 0; background: var(--line); border-radius: 22px; transition: background .15s;
+}
+.switch i::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text); transition: transform .15s;
+}
+.switch input:checked + i { background: var(--mint); }
+.switch input:checked + i::after { transform: translateX(18px); background: var(--ink); }
+.switch input:focus-visible + i { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* ---------- установка и подключение ---------- */
+.connect { min-height: 100%; overflow-y: auto; padding: 48px 40px; }
+.onboard { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: 1.45fr 1fr; gap: 48px; align-items: start; }
+.onboard h1 { font-size: 30px; margin-bottom: 10px; }
+.lead { max-width: 60ch; margin-bottom: 28px; }
+.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; }
+.steps li { counter-increment: step; position: relative; padding: 0 0 26px 56px; }
+.steps li::before {
+  content: counter(step); position: absolute; left: 0; top: -2px; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 14px;
+  color: var(--gold); border: 1.5px solid var(--gold);
+}
+.steps li:not(:last-child)::after { content: ""; position: absolute; left: 17px; top: 38px; bottom: 6px; width: 1.5px; background: var(--line); }
+.steps h3 { margin-bottom: 4px; }
+.steps p { max-width: 60ch; }
+.cmd { display: flex; align-items: center; gap: 10px; margin-top: 10px; background: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 8px 8px 14px; }
+.cmd code { flex: 1; color: var(--gold); word-break: break-all; font-size: 13px; line-height: 1.5; }
+.cmd .btn { flex: none; padding: 7px 12px; font-size: 13px; }
+.onboard-key { position: sticky; top: 0; }
+.onboard-key h2 { margin-bottom: 6px; }
+.onboard-key > .muted { margin-bottom: 14px; font-size: 13px; }
+.onboard-key textarea { margin-bottom: 10px; font-family: Consolas, monospace; font-size: 12.5px; word-break: break-all; }
+.onboard-key .error { margin-bottom: 10px; }
+.onboard-key .btn.ghost { margin-top: 6px; }
+@media (max-width: 900px) { .onboard { grid-template-columns: 1fr; } .onboard-key { position: static; } }
+
+/* ---------- каркас ---------- */
+/* ---------- КОКПИТ: верхнее меню ---------- */
+.shell { display: flex; flex-direction: column; height: 100%; }
+.topbar {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 0 20px; height: 60px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.topbar .brand { display: flex; align-items: center; gap: 9px; font-family: var(--display); font-weight: 700; font-size: 19px; margin-right: 18px; flex: none; }
+.topbar .brand img { width: 28px; height: 28px; border-radius: 8px; }
+.topnav { display: flex; align-items: center; gap: 1px; flex: 0 1 auto; min-width: 0; margin: 0 14px; }
+.topnav a {
+  padding: 9px 13px; border-radius: var(--r-sm); color: var(--muted);
+  font-weight: 600; font-size: 14px; cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color .18s var(--ease), background .18s var(--ease);
+}
+.topnav a:hover { color: var(--text); background: var(--panel-2); }
+.topnav a.active { color: #fff; background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--gold); }
+.topbar-right { display: flex; align-items: center; gap: 14px; flex: none; margin-left: auto; padding-left: 6px; }
+.topbal { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.topbal b { font-family: var(--display); font-weight: 700; font-size: 16px; color: var(--gold); white-space: nowrap; }
+.server {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); font-weight: 600; font-size: 12.5px;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--mint); box-shadow: 0 0 0 4px rgba(79, 209, 161, .15); }
+.dot.bad { background: var(--coral); }
+
+.page { overflow-y: auto; padding: 28px 32px 40px; }
+.page { opacity: 0; transform: translateY(6px); transition: opacity .28s var(--ease), transform .28s var(--ease); }
+.page.page-in { opacity: 1; transform: none; }
+.page::-webkit-scrollbar { width: 10px; }
+.page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.page-head h1 { margin-right: auto; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 22px; box-shadow: var(--shadow); transition: border-color .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease); }
+/* тонкая верхняя подсветка на панелях — ощущение объёма */
+.panel { background-image: linear-gradient(var(--panel), var(--panel)), linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%); background-origin: border-box; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+
+/* ---------- сводка ---------- */
+.hero { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; margin-bottom: 16px; }
+.balance-label { color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.balance {
+  font-family: var(--display); font-weight: 700; font-size: clamp(34px, 4.4vw, 54px);
+  line-height: 1.05; color: var(--gold); letter-spacing: -.02em; white-space: nowrap;
+}
+.balance small { font-size: .5em; color: var(--muted); margin-left: 6px; }
+.split { display: flex; height: 8px; border-radius: 8px; overflow: hidden; margin: 22px 0 12px; gap: 2px; }
+.split span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+.legend b { font-weight: 600; }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; }
+
+.figures { display: grid; grid-template-rows: repeat(3, 1fr); gap: 0; }
+.figure { display: flex; align-items: center; justify-content: space-between; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.figure:last-child { border-bottom: none; }
+.figure .v { font-size: 22px; font-weight: 700; }
+.delta { font-size: 12px; font-weight: 600; margin-left: 8px; }
+.delta.up { color: var(--mint); } .delta.down { color: var(--coral); }
+
+.grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+
+/* график */
+.chart { position: relative; height: 250px; }
+.chart svg { width: 100%; height: 100%; overflow: visible; }
+.chart .bar { fill: url(#barGrad); opacity: .92; }
+.chart .bar.empty { fill: var(--line); opacity: 1; }
+.chart .hit { fill: transparent; cursor: default; }
+.chart .hit:hover + .bar, .chart g:hover .bar { opacity: 1; filter: drop-shadow(0 0 6px rgba(199,125,255,.5)); }
+.chart .axis { fill: var(--muted); font-size: 11px; font-family: var(--ui); }
+.chart .gridline { stroke: var(--line); stroke-dasharray: 3 4; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--ink); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 7px 10px; font-size: 12.5px; white-space: nowrap; transform: translate(-50%, -100%);
+}
+.tip b { color: var(--gold); }
+
+/* журнал */
+.log { list-style: none; margin: 0; padding: 0; max-height: 292px; overflow-y: auto; }
+.log li { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.log li:last-child { border-bottom: none; }
+.log time { color: var(--muted); }
+.log li.order time { color: var(--gold); font-weight: 600; }
+.log .error { color: var(--coral); font-size: 13px; }
+
+/* ---------- таблицы ---------- */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 600; font-size: 12.5px; color: var(--muted); padding: 0 12px 10px; white-space: nowrap; }
+td { padding: 11px 12px; border-top: 1px solid var(--line); vertical-align: middle; }
+td.num, th.num { text-align: right; }
+td { transition: background .15s var(--ease); }
+tr:hover td { background: rgba(255, 255, 255, .025); }
+.nowrap { white-space: nowrap; }
+.lot { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { white-space: nowrap; display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
+.pill.paid { background: rgba(122, 167, 255, .14); color: var(--sky); }
+.pill.closed { background: rgba(79, 209, 161, .14); color: var(--mint); }
+.pill.refunded { background: rgba(255, 122, 107, .14); color: var(--coral); }
+.pill.ok { background: rgba(79, 209, 161, .14); color: var(--mint); }
+.pill.error { background: rgba(255, 122, 107, .14); color: var(--coral); }
+.pill.new { background: var(--gold-dim); color: var(--gold); }
+
+/* ---------- аккаунты ---------- */
+.accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
+.acc { display: flex; flex-direction: column; gap: 14px; }
+.acc-top { display: flex; align-items: center; gap: 12px; }
+.avatar {
+  width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  font-family: var(--display); font-weight: 700; font-size: 16px; color: var(--ink);
+}
+.acc-name { font-weight: 700; font-size: 15px; }
+.acc-balance { font-family: var(--display); font-size: 26px; font-weight: 700; }
+.acc-meta { display: flex; gap: 20px; font-size: 13px; }
+.acc-actions { display: flex; gap: 8px; margin-top: auto; }
+.acc .err { font-size: 12.5px; color: var(--coral); }
+.empty { text-align: center; padding: 48px 20px; }
+.empty h2 { margin-bottom: 8px; }
+.empty p { margin-bottom: 18px; }
+
+/* ---------- продажи ---------- */
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 3px; }
+.seg button { font: 600 13px var(--ui); color: var(--muted); background: none; border: 0; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.seg button.on { background: var(--panel-2); color: var(--text); }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.kpi .k { color: var(--muted); font-size: 13px; font-weight: 600; }
+.kpi .v { font-size: 24px; font-weight: 700; margin-top: 2px; }
+.kpi.money .v { color: var(--gold); }
+select.compact { width: auto; padding: 7px 10px; }
+
+/* ---------- плагины ---------- */
+.plugins { display: flex; flex-direction: column; gap: 10px; }
+.plugin { display: grid; grid-template-columns: 1fr auto auto; gap: 18px; align-items: center; padding: 16px 20px; }
+.plugin .ver { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 8px; }
+.plugin p { color: var(--muted); margin-top: 3px; }
+
+/* ---------- настройки ---------- */
+.settings { display: grid; gap: 16px; max-width: 720px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-top: 1px solid var(--line); }
+.row:first-of-type { border-top: 0; padding-top: 0; }
+.row p { color: var(--muted); font-size: 13px; }
+.row input[type=number] { width: 90px; }
+
+/* ---------- модалка и уведомление ---------- */
+.overlay { position: fixed; inset: 0; background: rgba(6, 10, 20, .66); display: grid; place-items: center; padding: 24px; z-index: 50; }
+.modal { width: min(540px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 24px; animation: pop .2s var(--ease); }
+.modal h2 { margin-bottom: 6px; }
+.modal > .muted { margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+@keyframes pop { from { transform: scale(.96) translateY(8px); opacity: 0; } }
+.overlay { animation: fade .18s var(--ease); }
+
+.toast {
+  position: fixed; right: 24px; bottom: 24px; background: var(--panel-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--mint); border-radius: var(--r-sm); padding: 12px 16px; z-index: 60; max-width: 380px;
+}
+.toast.bad { border-left-color: var(--coral); }
+
+@media (prefers-reduced-motion: reduce) { *, html { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@media (max-width: 1100px) {
+  .hero, .grid-2 { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- надёжность плагинов ---------- */
+.badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--coral); color: var(--ink); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.banner { display: block; margin-bottom: 16px; padding: 14px 18px; border-radius: var(--r-md); background: rgba(255, 122, 107, .1); border: 1px solid rgba(255, 122, 107, .35); color: var(--text); cursor: pointer; }
+.banner b { color: var(--coral); }
+.panel.alert { border-color: rgba(255, 122, 107, .45); }
+.task { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.task .lot { max-width: 520px; }
+.task .err { color: var(--coral); font-size: 13px; }
+.task-actions { display: flex; gap: 8px; flex: none; }
+.plugin { grid-template-columns: 1fr auto auto; }
+.plugin-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.plugin-meta { display: flex; gap: 16px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.warn-text { color: var(--coral); font-weight: 600; }
+.req { font-size: 11.5px; color: var(--gold); margin-left: 6px; }
+.hint { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
+.secret { display: flex; gap: 8px; }
+.result { margin: 4px 0 12px; padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); }
+.result.ok b { color: var(--mint); } .result.bad b { color: var(--coral); }
+.result pre { color: var(--text); word-break: normal; overflow-wrap: anywhere; }
+.log li.warn time, .log li.warn span { color: var(--gold); }
+.modal { max-height: calc(100vh - 48px); overflow-y: auto; }
+
+h2.group { font-size: 14px; color: var(--muted); font-weight: 600; margin: 22px 0 10px; }
+h2.group:first-of-type { margin-top: 4px; }
+.plugin.soon h3, .plugin.soon > div > p { color: var(--muted); }
+.plugin.soon { background: transparent; }
+.plugin h3 .pill { margin-left: 10px; vertical-align: 2px; }
+.switch input:disabled { cursor: not-allowed; }
+.switch input:disabled + i { opacity: .35; }
+
+/* ---------- чаты ---------- */
+.search { width: 260px; }
+.chat-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; height: calc(100vh - 130px); min-height: 460px; }
+.chat-list { padding: 6px; overflow-y: auto; }
+.chat-item { display: block; padding: 10px 12px; border-radius: var(--r-sm); cursor: pointer; }
+.chat-item { transition: background .16s var(--ease), box-shadow .16s var(--ease); }
+.chat-item:hover { background: var(--panel-2); }
+.chat-item.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--gold); }
+.chat-item-top { display: flex; justify-content: space-between; gap: 8px; }
+.chat-item-top time { color: var(--muted); font-size: 12px; flex: none; }
+.chat-item-text { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item.unread b::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); margin-left: 7px; vertical-align: 2px; }
+.chat-item.unread .chat-item-text { color: var(--text); }
+.chat-box { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.chat-empty { margin: auto; }
+.chat-head { display: flex; flex-direction: column; gap: 6px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.chat-head-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.chat-lot { display: flex; align-items: center; gap: 7px; }
+.chat-lot .lot-tag { background: var(--gold-dim); color: var(--gold); font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: .04em; }
+.chat-msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 72%; align-self: flex-start; background: var(--panel-2); border-radius: 12px 12px 12px 4px; padding: 8px 12px; }
+.msg.mine { align-self: flex-end; background: var(--gold-dim); border-radius: 12px 12px 4px 12px; }
+.msg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg time { display: block; text-align: right; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.msg-sys { align-self: center; font-size: 12.5px; color: var(--muted); text-align: center; max-width: 80%; padding: 4px 0; }
+.chat-input { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); align-items: flex-end; }
+.chat-input textarea { resize: none; }
+
+/* ---------- автовыдача, автоответы, настройки ---------- */
+.row-panel { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.row-panel p { max-width: 70ch; margin-top: 4px; }
+.row-panel.off { border-color: rgba(255, 122, 107, .35); }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.row-actions .btn { padding: 6px 11px; font-size: 13px; }
+.settings .panel > .row:first-child { padding-top: 0; border-top: 0; margin-bottom: 8px; }
+.settings .row h2 { margin-bottom: 2px; }
+.inline { display: flex; align-items: center; gap: 8px; }
+.btn-row { display: flex; gap: 10px; }
+.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 4px 0 18px; }
+.check { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--gold); }
+.raise-log { font-size: 13px; background: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; margin: 4px 0 14px; display: grid; gap: 4px; }
+.profit { color: var(--mint); }
+.v.profit { color: var(--mint); }
+.badge.info { background: var(--sky); }
+.toast { white-space: pre-line; }
+.figures { grid-template-rows: repeat(4, 1fr); }
+.kpi .small { margin-top: 4px; }
+.toggle-cell { width: 56px; }
+td .switch { display: inline-block; }
+.linkbtn { background: none; border: 0; color: var(--sky); cursor: pointer; font-size: 12.5px; padding: 0; }
+.pw { font-family: Consolas, monospace; }
+
+/* ---------- подписка ---------- */
+.sub-hero { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 24px; }
+.sub-hero.active { border-color: rgba(79,209,161,.4); }
+.sub-hero.trial { border-color: rgba(242,181,68,.4); }
+.sub-hero.off { border-color: rgba(255,122,107,.4); }
+.sub-badge { display: inline-block; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 20px; margin-bottom: 10px; }
+.sub-hero.active .sub-badge { background: rgba(79,209,161,.15); color: var(--mint); }
+.sub-hero.trial .sub-badge { background: var(--gold-dim); color: var(--gold); }
+.sub-hero.off .sub-badge { background: rgba(255,122,107,.15); color: var(--coral); }
+.sub-days { font-family: var(--display); font-size: 40px; font-weight: 700; margin-bottom: 6px; }
+.sub-activate { display: flex; gap: 10px; max-width: 460px; }
+.sub-activate input { font-family: Consolas, monospace; letter-spacing: 1px; text-transform: uppercase; }
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.plan { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 16px; text-align: center; }
+.plan-name { font-weight: 700; margin-bottom: 4px; }
+.plan-price { font-family: var(--display); font-size: 22px; font-weight: 700; color: var(--violet-soft); margin-bottom: 12px; }
+
+/* ---------- полноэкранное окно настройки плагина ---------- */
+.cfg-overlay { position: fixed; inset: 0; z-index: 30; background: var(--ink); overflow-y: auto; animation: fade .15s ease-out; }
+@keyframes fade { from { opacity: 0; } }
+.cfg-screen { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
+.cfg-top { display: flex; align-items: center; gap: 18px; padding: 8px 0 22px; position: sticky; top: 0; background: var(--ink); z-index: 1; }
+.cfg-title { font-family: var(--display); font-size: 22px; font-weight: 700; }
+.cfg-cols { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+.cfg-aside { display: flex; flex-direction: column; gap: 16px; }
+.btn.wide { width: 100%; text-align: center; }
+@media (max-width: 900px) { .cfg-cols { grid-template-columns: 1fr; } .cfg-screen { padding: 16px 18px 40px; } }
+
+/* ---------- блок «Как получить …» в модалках ---------- */
+.howto { margin-top: 6px; color: var(--muted); font-size: 13px; clear: both; }
+.howto summary { cursor: pointer; color: var(--text); font-weight: 600; list-style: revert; }
+.howto ol { padding-left: 18px; margin: 8px 0 0; }
+.howto li { margin-bottom: 6px; }
+.howto code, .howto pre { color: var(--gold); }
+
+/* поля ввода всегда поверх соседних блоков и кликабельны (фикс для QtWebEngine) */
+.modal input, .modal textarea, .modal select { position: relative; z-index: 2; }
+.modal .hint, .modal p { position: relative; z-index: 0; pointer-events: none; }
+
+/* логотип внутри приложения */
+.wordmark { display: flex; align-items: center; gap: 10px; }
+.logo-img { width: 26px; height: 26px; border-radius: 7px; flex: none; }
+.wordmark.big { flex-direction: column; gap: 12px; align-items: flex-start; }
+.logo-img-big { width: 56px; height: 56px; border-radius: 14px; }
+.seg-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--gold-dim); color: var(--gold); font-size: 11px; font-weight: 700; }
+.seg button.on .seg-count { background: rgba(255,255,255,.14); color: #fff; }
+
+
+/* кокпит: адаптив верхнего меню */
+@media (max-width: 1180px) {
+  .topnav a { padding: 8px 9px; font-size: 13px; }
+  .topbar .brand { margin-right: 10px; }
+  .topbar-right { gap: 10px; }
+}
+@media (max-width: 980px) {
+  .topnav a { padding: 7px 7px; font-size: 12px; }
+  .topbal { display: none; }
+}
+
+/* индивидуальные настройки аккаунта аренды */
+.acc-own { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.acc-own-title { font-family: var(--display); font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+
+.acc-title { font-size: 12px; color: var(--gold); font-weight: 600; margin-bottom: 2px; }
+
+/* поле загрузки фото в настройках плагина */
+.img-field { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.img-status { font-size: 13px; color: var(--muted); padding: 7px 12px; border: 1px dashed var(--line); border-radius: var(--r-sm); }
+.img-status.on { color: var(--mint); border-color: var(--mint); border-style: solid; }
+.img-actions { display: flex; gap: 8px; }
+.img-actions .btn { cursor: pointer; }
+
+/* ====== Каталог плагинов (в стиле Pulse) ====== */
+.pcatalog-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+.psearch { flex: 1; padding: 11px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text); font: 14px var(--ui); }
+.psearch:focus { outline: none; box-shadow: 0 0 0 3px var(--gold-dim); border-color: var(--gold); }
+.access-seg { flex: none; }
+.pchips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.pchip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--muted); font: 600 13px var(--ui); cursor: pointer; transition: all .15s var(--ease); }
+.pchip:hover { color: var(--text); border-color: var(--gold-dim); }
+.pchip.on { background: var(--gold); color: #1a1205; border-color: var(--gold); }
+.pchip span { opacity: .7; font-size: 12px; }
+.pchip.on span { opacity: .85; }
+
+.pcatalog { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
+.pcatalog-main { min-width: 0; }
+.pcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.pcard { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; cursor: pointer;
+  transition: border-color .15s var(--ease), transform .15s var(--ease), box-shadow .15s var(--ease); display: flex; flex-direction: column; }
+.pcard:hover { border-color: var(--gold-dim); transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0,0,0,.3); }
+.pcard.sel { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.pcard.soon { opacity: .72; }
+.pcard-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.pcard-icon { width: 40px; height: 40px; border-radius: 11px; background: var(--panel-2); display: grid; place-items: center; font-size: 20px; }
+.pcard-icon.big { width: 48px; height: 48px; font-size: 24px; }
+.pcard-star { background: none; border: 0; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px; }
+.pcard-star:hover { color: var(--gold); }
+.pcard h3 { font-family: var(--display); font-size: 15px; margin-bottom: 5px; }
+.pcard p { color: var(--muted); font-size: 12.5px; line-height: 1.45; flex: 1; margin-bottom: 12px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pcard-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acc-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+.acc-badge.free { background: rgba(79,209,161,.15); color: var(--mint); }
+.acc-badge.sub { background: var(--gold-dim); color: var(--gold); }
+.pcard-state { font-size: 12px; color: var(--muted); margin-left: auto; }
+.pcard-state.on { color: var(--mint); }
+.pcard-state.soon { color: var(--gold); }
+.btn.small { padding: 5px 11px; font-size: 12px; }
+
+/* панель справа */
+.pdetail { position: sticky; top: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; }
+.pdetail-head { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+.pdetail-head h2 { font-family: var(--display); font-size: 17px; }
+.pdetail-rows { margin: 14px 0; border-top: 1px solid var(--line); }
+.pdetail-rows > div { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.pdetail-rows span { color: var(--muted); }
+.pdetail-rows b.mint { color: var(--mint); }
+.pdetail-needs { background: var(--panel-2); border-radius: var(--r-sm); padding: 12px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.pdetail-stats { display: flex; gap: 18px; margin: 14px 0; }
+.pdetail-stats > div { display: flex; flex-direction: column; }
+.pdetail-stats b { font-family: var(--display); font-size: 20px; }
+.pdetail-stats span { color: var(--muted); font-size: 11px; }
+.pdetail-actions { display: flex; align-items: center; gap: 12px; }
+.pdetail-actions .btn { flex: 1; }
+
+@media (max-width: 1100px) { .pcatalog { grid-template-columns: 1fr; } .pdetail { position: static; } }
+
+/* Топ продаж аренды */
+.top-earn { background: var(--gold-dim); border-radius: var(--r-sm); padding: 12px 16px; margin-bottom: 8px; font-size: 14px; }
+.top-earn b { color: var(--gold); font-family: var(--display); font-size: 17px; }
+.top-h { font-family: var(--display); font-size: 14px; margin: 16px 0 8px; }
+.top-table { width: 100%; border-collapse: collapse; }
+.top-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.top-table td:first-child { font-weight: 600; }
+.top-table td:not(:first-child) { color: var(--muted); text-align: right; }
+
+/* ====== Дашборд (детальный, в стиле Pulse) ====== */
+.dash-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.dash-greet { font-family: var(--display); font-size: 30px; font-weight: 700; margin: 4px 0 6px; }
+
+/* умная плашка статуса */
+.hc-banner { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-radius: var(--r-md); margin-bottom: 16px; text-decoration: none; color: var(--text); }
+.hc-banner.ok { background: rgba(79,209,161,.08); border: 1px solid rgba(79,209,161,.25); }
+.hc-banner.warn { background: rgba(242,181,68,.08); border: 1px solid rgba(242,181,68,.3); cursor: pointer; }
+.hc-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 18px; flex: none; }
+.hc-banner.ok .hc-icon { background: rgba(79,209,161,.15); color: var(--mint); }
+.hc-banner.warn .hc-icon { background: rgba(242,181,68,.15); }
+.hc-banner b { font-size: 15px; }
+.hc-arrow { margin-left: auto; color: var(--gold); font-weight: 600; font-size: 14px; }
+
+/* карточки-метрики */
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.metric { display: flex; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px 20px; }
+.metric-ic { width: 44px; height: 44px; border-radius: 12px; background: var(--panel-2); display: grid; place-items: center; font-size: 20px; flex: none; }
+.metric-l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.metric-v { font-family: var(--display); font-size: 24px; font-weight: 700; margin: 3px 0; }
+.metric-v.gold { color: var(--gold); } .metric-v.mint { color: var(--mint); }
+.metric-s { font-size: 12px; }
+
+/* метрики над графиком */
+.chart-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.cm { background: var(--panel-2); border-radius: var(--r-sm); padding: 12px 14px; }
+.cm-l { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; }
+.cm-v { font-family: var(--display); font-size: 17px; font-weight: 700; }
+
+/* готовность аккаунтов */
+.ready-bar { height: 8px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
+.ready-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--mint), #3db88a); border-radius: 99px; transition: width .4s var(--ease); }
+.ready-list { display: flex; flex-direction: column; gap: 10px; }
+.ready-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--panel-2); border-radius: var(--r-sm); }
+.avatar.sm { width: 34px; height: 34px; font-size: 14px; border-radius: 9px; display: grid; place-items: center; font-weight: 700; color: #fff; }
+.pill.sm { font-size: 11px; padding: 2px 8px; }
+.empty-mini { text-align: center; padding: 30px 20px; }
+.empty-ic { font-size: 34px; margin-bottom: 10px; opacity: .5; }
+.empty-mini p { margin-bottom: 14px; }
+
+@media (max-width: 1100px) { .metrics { grid-template-columns: repeat(2,1fr); } .chart-metrics { grid-template-columns: repeat(2,1fr); } }
+
+/* ====== SVG-иконки: единый размер и стиль ====== */
+.metric-ic svg, .hc-icon svg, .chip-ic svg, .btn-ic svg, .pcard-icon svg, .pdetail .pcard-icon svg { width: 100%; height: 100%; display: block; }
+.metric-ic { padding: 11px; color: var(--gold); }
+.metric-ic.blue { color: var(--sky); background: rgba(109,139,255,.1); }
+.metric-ic.gold { color: var(--gold); background: var(--gold-dim); }
+.metric-ic.mint { color: var(--mint); background: rgba(79,209,161,.1); }
+.hc-icon svg { width: 20px; height: 20px; }
+.chip-ic { display: inline-flex; width: 15px; height: 15px; vertical-align: -2px; }
+.chip-ic svg { width: 15px; height: 15px; }
+.btn-ic { display: inline-flex; width: 15px; height: 15px; margin-right: 7px; vertical-align: -2px; }
+.pcard-icon { color: var(--gold); padding: 9px; }
+.pcard-icon svg { width: 100%; height: 100%; }
+.pcard-icon.big { padding: 11px; }
+.group .chip-ic { width: 17px; height: 17px; margin-right: 7px; color: var(--gold); }
+.group .chip-ic svg { width: 17px; height: 17px; }
+
+/* ====== Дашборд: добавляем объём и воздух ====== */
+.metric { box-shadow: var(--shadow); transition: transform .2s var(--ease), border-color .2s var(--ease); }
+.metric:hover { transform: translateY(-2px); border-color: var(--line); }
+.metrics { gap: 16px; margin-bottom: 20px; }
+
+.hc-banner { box-shadow: var(--shadow); backdrop-filter: blur(6px); }
+.hc-banner.ok { background: linear-gradient(180deg, rgba(79,209,161,.1), rgba(79,209,161,.04)); }
+.hc-banner.warn { background: linear-gradient(180deg, rgba(242,181,68,.1), rgba(242,181,68,.04)); }
+.hc-banner.warn .hc-icon { color: var(--amber); }
+.hc-banner.ok .hc-icon { color: var(--mint); }
+.hc-arrow { display: inline-flex; align-items: center; gap: 4px; }
+.hc-arrow svg { width: 14px; height: 14px; }
+
+/* заголовки панелей — чуть крупнее и с буквенным интервалом */
+.panel-head h2 { font-family: var(--display); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.panel-head { margin-bottom: 18px; }
+.dash-greet { letter-spacing: -.02em; }
+
+/* метрики над графиком — мягче */
+.cm { background: var(--panel-soft); border: 1px solid var(--line-soft); }
+.chart-metrics { gap: 12px; }
+
+/* готовность: пункты с наведением */
+.ready-item { border: 1px solid transparent; transition: border-color .15s var(--ease); }
+.ready-item:hover { border-color: var(--line); }
+
+/* кнопки — мягкая тень и аккуратный акцент */
+.btn { box-shadow: var(--shadow); }
+.btn.primary { box-shadow: 0 4px 14px rgba(168,85,247,.3); }
+.btn:active { transform: scale(.98); }
+
+/* карточки плагинов — объём */
+.pcard { box-shadow: var(--shadow); }
+.pcard:hover { box-shadow: var(--shadow-lg); }
+.pdetail { box-shadow: var(--shadow-lg); }
+
+/* чипсы категорий — мягче */
+.pchip { box-shadow: var(--shadow); }
+
+/* журнал — больше воздуха между строками */
+.log li { padding: 9px 0; }
+
+/* ====== Дашборд в стиле Pulse (неоновый фиолет) ====== */
+.dash-greet { font-family: var(--display); font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin: 2px 0 6px; }
+
+/* широкая плашка-статус */
+.hero-status { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-radius: var(--r-md); margin-bottom: 18px; box-shadow: var(--shadow); }
+.hero-status.ok { background: linear-gradient(135deg, rgba(79,224,168,.07), rgba(79,224,168,.02)); border: 1px solid rgba(79,224,168,.22); }
+.hero-status.warn { background: linear-gradient(135deg, rgba(245,190,82,.08), rgba(245,190,82,.02)); border: 1px solid rgba(245,190,82,.28); }
+.hs-icon { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.hs-icon svg { width: 22px; height: 22px; }
+.hero-status.ok .hs-icon { background: rgba(79,224,168,.14); color: var(--mint); }
+.hero-status.warn .hs-icon { background: rgba(245,190,82,.14); color: var(--amber); }
+.hs-text b { font-size: 16px; font-family: var(--display); }
+.hs-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font: 600 13px var(--ui); padding: 9px 16px; border-radius: var(--r-sm); cursor: pointer; transition: all .15s var(--ease); }
+.hs-btn:hover { border-color: var(--neon); color: var(--neon); }
+.hs-btn svg { width: 14px; height: 14px; }
+
+/* карточки метрик — вертикальная структура как у Pulse */
+.metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 18px; }
+.metric { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; box-shadow: var(--shadow); transition: transform .2s var(--ease), border-color .2s var(--ease); }
+.metric:hover { transform: translateY(-2px); border-color: var(--line); }
+.metric-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.metric-ic { width: 36px; height: 36px; border-radius: 10px; padding: 9px; flex: none; }
+.metric-ic.sky { color: var(--sky); background: rgba(124,155,255,.12); }
+.metric-ic.gold { color: var(--neon); background: var(--gold-dim); }
+.metric-ic.mint { color: var(--mint); background: rgba(79,224,168,.12); }
+.metric-ic.neon-ic { color: var(--neon); background: var(--gold-dim); }
+.metric-l { color: var(--muted); font-size: 13px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.metric-v { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 4px; }
+.metric-v.neon { color: var(--neon); text-shadow: 0 0 18px rgba(199,125,255,.4); }
+.metric-v.mint { color: var(--mint); }
+.metric-s { font-size: 12.5px; }
+.ready-bar.sm { height: 6px; margin-top: 8px; }
+
+/* график + выбранный день */
+.dash-chart-row { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+.day-panel { background: var(--panel-soft); }
+.day-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--gold-dim); color: var(--neon); font-weight: 600; font-size: 13px; padding: 5px 12px; border-radius: 99px; margin: 10px 0; }
+.day-date { font-family: var(--display); font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+.day-rev-box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 14px; margin-bottom: 14px; }
+.day-rev { font-family: var(--display); font-size: 26px; font-weight: 700; margin-top: 4px; }
+.day-rev.neon { color: var(--neon); text-shadow: var(--glow); }
+.day-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; }
+.day-row b { font-family: var(--display); }
+
+/* метрики над графиком */
+.chart-metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 18px; }
+.cm { background: var(--panel-soft); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 12px 14px; }
+.cm-l { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.cm-v { font-family: var(--display); font-size: 17px; font-weight: 700; }
+.cm-v.neon { color: var(--neon); }
+
+/* заголовки панелей с иконкой */
+.panel-head h2 { display: inline-flex; align-items: center; gap: 9px; font-family: var(--display); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.panel-head h2 svg { width: 18px; height: 18px; color: var(--neon); }
+
+/* готовность — сетка */
+.ready-bar { height: 8px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
+.ready-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--neon), var(--violet)); border-radius: 99px; box-shadow: 0 0 10px rgba(199,125,255,.5); transition: width .4s var(--ease); }
+.ready-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap: 10px; }
+.ready-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--panel-soft); border: 1px solid var(--line-soft); border-radius: var(--r-sm); }
+.ready-info { min-width: 0; } .ready-info b { display: block; }
+.avatar.sm { width: 36px; height: 36px; font-size: 15px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; margin-left: auto; }
+.dot.ok { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.dot.err { background: var(--coral); box-shadow: 0 0 8px var(--coral); }
+
+/* выбранный столбец графика */
+.bar.sel { fill: var(--neon) !important; filter: drop-shadow(0 0 6px rgba(199,125,255,.6)); }
+
+/* неоновые акценты на кнопках и барах графика */
+.btn.primary { background: linear-gradient(135deg, var(--neon), var(--violet)); box-shadow: 0 4px 18px rgba(188,108,255,.4); }
+.topnav a.active { box-shadow: inset 0 -2px 0 var(--neon); }
+.topbal b { color: var(--neon); text-shadow: 0 0 14px rgba(199,125,255,.4); }
+
+@media (max-width: 1100px) { .metrics { grid-template-columns: repeat(2,1fr); } .dash-chart-row { grid-template-columns: 1fr; } .chart-metrics { grid-template-columns: repeat(2,1fr); } }
+
+/* точки на линейном графике */
+.chart .dot-pt { fill: var(--neon); stroke: var(--ink); stroke-width: 2; transition: r .12s var(--ease); filter: drop-shadow(0 0 6px rgba(199,125,255,.7)); }
+.chart .dot-pt.sel { fill: #fff; }
+.chart { height: 260px; }
+
+/* круговой индикатор готовности */
+.ring-row { display: flex; align-items: center; gap: 14px; }
+.ring { width: 52px; height: 52px; flex: none; transform: rotate(-90deg); }
+.ring-bg { fill: none; stroke: var(--panel-2); stroke-width: 4; }
+.ring-fg { fill: none; stroke: var(--mint); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .6s var(--ease); filter: drop-shadow(0 0 4px rgba(79,224,168,.6)); }
+.metric-ring .metric-v { margin-bottom: 2px; }
+
+/* ====== Аккаунты (в стиле Pulse) ====== */
+.acc-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 20px; }
+.acc-stats .metric-v { font-size: 24px; }
+.acc-layout { display: grid; grid-template-columns: 1fr 340px; gap: 18px; align-items: start; }
+.acc-main { min-width: 0; }
+.acc-bar { display: flex; gap: 12px; margin-bottom: 14px; }
+.acc-rows { display: flex; flex-direction: column; gap: 8px; }
+.acc-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); cursor: pointer; box-shadow: var(--shadow); transition: border-color .15s var(--ease), transform .15s var(--ease); }
+.acc-row:hover { border-color: var(--line); transform: translateX(2px); }
+.acc-row.sel { border-color: var(--neon); box-shadow: 0 0 0 1px var(--neon), var(--shadow); }
+.acc-row-id { min-width: 0; flex: 1; } .acc-row-id b { display: block; }
+.acc-row-bal { font-family: var(--display); font-weight: 700; white-space: nowrap; }
+
+/* панель деталей аккаунта */
+.acc-detail { position: sticky; top: 76px; box-shadow: var(--shadow-lg); }
+.ad-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.ad-head .avatar { width: 44px; height: 44px; font-size: 18px; }
+.ad-id b { font-family: var(--display); font-size: 16px; }
+.ad-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.ad-stats > div { background: var(--panel-soft); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 12px 14px; }
+.ad-stats b { font-family: var(--display); font-size: 16px; display: block; margin-top: 3px; }
+.ad-stats b.neon { color: var(--neon); }
+.ad-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.ad-actions .btn { flex: 1; min-width: 100px; }
+.ad-open { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 11px; background: var(--panel-2); border-radius: var(--r-sm); color: var(--neon); font-weight: 600; font-size: 13px; text-decoration: none; transition: background .15s; }
+.ad-open:hover { background: var(--gold-dim); }
+.ad-open svg { width: 14px; height: 14px; }
+.avatar.sm { width: 38px; height: 38px; font-size: 16px; }
+
+@media (max-width: 1100px) { .acc-stats { grid-template-columns: repeat(2,1fr); } .acc-layout { grid-template-columns: 1fr; } .acc-detail { position: static; } }
+.err-text { color: var(--coral); }
+
+/* ====== Подписка (в стиле Pulse) ====== */
+.sub-current { display: flex; align-items: center; gap: 16px; padding: 24px; border-radius: var(--r-md); box-shadow: var(--shadow); }
+.sub-current.active { background: linear-gradient(135deg, rgba(79,224,168,.08), rgba(79,224,168,.02)); border: 1px solid rgba(79,224,168,.25); }
+.sub-current.trial { background: linear-gradient(135deg, rgba(124,155,255,.08), rgba(124,155,255,.02)); border: 1px solid rgba(124,155,255,.25); }
+.sub-current.off { background: var(--panel); border: 1px solid var(--line); }
+.sub-cur-icon { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; flex: none; background: var(--panel-2); }
+.sub-cur-icon svg { width: 26px; height: 26px; }
+.sub-current.active .sub-cur-icon { color: var(--mint); background: rgba(79,224,168,.14); }
+.sub-current.off .sub-cur-icon { color: var(--muted); }
+.sub-cur-title { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 4px 0; }
+.sub-cur-days { margin-left: auto; text-align: center; }
+.sub-cur-days b { display: block; font-family: var(--display); font-size: 34px; line-height: 1; }
+.sub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+.sub-activate { display: flex; gap: 10px; }
+.sub-activate input { flex: 1; padding: 12px 16px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text); font: 15px var(--ui); letter-spacing: 2px; text-transform: uppercase; }
+.sub-activate input:focus { outline: none; border-color: var(--neon); box-shadow: 0 0 0 3px var(--gold-dim); }
+.feat-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.feat { display: flex; align-items: center; gap: 9px; font-size: 13.5px; }
+.feat-ic { display: inline-flex; width: 18px; height: 18px; color: var(--mint); flex: none; }
+.feat-ic svg { width: 18px; height: 18px; }
+.plan-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+.plan { position: relative; background: var(--panel-soft); border: 1px solid var(--line); border-radius: var(--r-md); padding: 22px 20px; text-align: center; transition: transform .2s var(--ease), border-color .2s var(--ease); }
+.plan:hover { transform: translateY(-3px); border-color: var(--line); }
+.plan.featured { border-color: var(--neon); box-shadow: 0 0 0 1px var(--neon), 0 10px 30px rgba(188,108,255,.2); }
+.plan-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, var(--neon), var(--violet)); color: #fff; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 99px; }
+.plan-name { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.plan-price { font-family: var(--display); font-size: 30px; font-weight: 700; }
+.plan-price small { font-size: 18px; color: var(--muted); }
+.plan .btn { width: 100%; }
+
+@media (max-width: 1000px) { .sub-grid { grid-template-columns: 1fr; } .plan-grid { grid-template-columns: repeat(2,1fr); } .feat-list { grid-template-columns: 1fr; } }
+
+/* ====== Настройки: боковое под-меню (как у Pulse) ====== */
+.settings-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
+.settings-nav { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 76px; }
+.settings-nav a { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-radius: var(--r-sm); color: var(--muted); font-weight: 600; font-size: 14px; cursor: pointer; transition: all .15s var(--ease); }
+.settings-nav a:hover { color: var(--text); background: var(--panel); }
+.settings-nav a.on { color: var(--neon); background: var(--gold-dim); }
+.sn-ic { display: inline-flex; width: 18px; height: 18px; }
+.sn-ic svg { width: 18px; height: 18px; }
+.settings-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.settings-content > section { margin: 0 !important; }
+
+@media (max-width: 900px) { .settings-layout { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; overflow-x: auto; position: static; } }
+
+/* ====== Чаты (в стиле Pulse) ====== */
+.chat-list-wrap { display: flex; flex-direction: column; padding: 16px; align-self: start; }
+.chat-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.chat-item { display: flex; align-items: flex-start; gap: 11px; padding: 11px 12px; border-radius: var(--r-sm); cursor: pointer; position: relative; transition: background .15s var(--ease); text-decoration: none; color: var(--text); }
+.chat-item:hover { background: var(--panel-soft); }
+.chat-item.on { background: var(--gold-dim); }
+.chat-item .avatar.sm { width: 40px; height: 40px; font-size: 16px; }
+.chat-item-body { flex: 1; min-width: 0; }
+.chat-item-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.chat-item-top b { font-size: 14px; }
+.chat-item-top time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.chat-item-text { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.chat-item.unread .chat-item-top b { color: var(--text); }
+.chat-item.unread .chat-item-text { color: var(--text); font-weight: 500; }
+.chat-unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neon); box-shadow: 0 0 8px var(--neon); flex: none; margin-top: 6px; }
+.chat-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 10px; }
+.chat-empty .empty-ic { opacity: .4; }
