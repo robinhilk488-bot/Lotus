@@ -558,7 +558,8 @@ td .switch { display: inline-block; }
 .avatar.sm { width: 34px; height: 34px; font-size: 14px; border-radius: 9px; display: grid; place-items: center; font-weight: 700; color: #fff; }
 .pill.sm { font-size: 11px; padding: 2px 8px; }
 .empty-mini { text-align: center; padding: 30px 20px; }
-.empty-ic { font-size: 34px; margin-bottom: 10px; opacity: .5; }
+.empty-ic { font-size: 34px; margin-bottom: 10px; opacity: .5; display: inline-flex; align-items: center; justify-content: center; }
+.empty-ic svg { width: 48px !important; height: 48px !important; color: var(--muted); }
 .empty-mini p { margin-bottom: 14px; }
 
 @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(2,1fr); } .chart-metrics { grid-template-columns: repeat(2,1fr); } }
@@ -834,3 +835,18 @@ svg { max-width: 100%; max-height: 100%; }
 
 /* аватар-картинка: объект-кавер, чтобы не искажалась */
 img.avatar { object-fit: cover; }
+
+/* ====== ГЛОБАЛЬНЫЙ ФИКС: ни одна SVG-иконка не раздувается в .exe ====== */
+/* по умолчанию все инлайн-SVG — небольшие; крупные размеры заданы точечно выше */
+svg { width: 1em; height: 1em; }
+/* но где явно задан размер контейнера/иконки — SVG заполняет его */
+.metric-ic svg, .pcard-icon svg, .ring, .chart svg { width: 100% !important; height: 100% !important; }
+.ring { width: 52px !important; height: 52px !important; }
+.chart svg { height: 100% !important; }
+.empty-ic svg { width: 48px !important; height: 48px !important; }
+.hs-icon svg { width: 22px !important; height: 22px !important; }
+.sub-cur-icon svg { width: 26px !important; height: 26px !important; }
+.hc-icon svg { width: 20px !important; height: 20px !important; }
+.sn-ic svg, .feat-ic svg, .panel-head h2 svg { width: 18px !important; height: 18px !important; }
+.chip-ic svg, .btn-ic svg { width: 15px !important; height: 15px !important; }
+.hs-btn svg, .ad-open svg, .hc-arrow svg { width: 14px !important; height: 14px !important; }
