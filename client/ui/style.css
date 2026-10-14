@@ -851,3 +851,11 @@ svg { width: 1em; height: 1em; }
 .sn-ic svg, .feat-ic svg, .panel-head h2 svg { width: 18px !important; height: 18px !important; }
 .chip-ic svg, .btn-ic svg { width: 15px !important; height: 15px !important; }
 .hs-btn svg, .ad-open svg, .hc-arrow svg { width: 14px !important; height: 14px !important; }
+
+/* ====== Выбор акцентного цвета ====== */
+.accent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.accent-swatch { display: flex; align-items: center; gap: 11px; padding: 14px 16px; background: var(--panel-soft); border: 2px solid var(--line); border-radius: var(--r-md); cursor: pointer; color: var(--text); font: 600 14px var(--ui); transition: border-color .15s var(--ease), transform .15s var(--ease); }
+.accent-swatch:hover { transform: translateY(-2px); border-color: var(--line); }
+.accent-swatch.on { border-color: var(--neon); box-shadow: 0 0 0 1px var(--neon); }
+.accent-dot { width: 22px; height: 22px; border-radius: 50%; flex: none; }
+.accent-name { white-space: nowrap; }
