@@ -56,6 +56,12 @@ CATALOG = [
 
     ("auto_stars", "AutoStars", "Автовыдача Telegram Stars по заказам.",
      "Telegram", [FUNPAY_CHAT, api("сервиса покупки Stars (например, Fragment)")]),
+    ("auto_premium", "AutoPremium", "Автовыдача Telegram Premium (3/6/12 мес) через Fragment API.",
+     "Telegram", [FUNPAY_CHAT, api("fragment-api.com"), "TON-кошелёк"]),
+    ("auto_bonus", "Счётчики продаж", "Дописывает в описание лотов статистику продаж: за день, неделю и всего.",
+     "Лоты", [FUNPAY_CHAT]),
+    ("auto_gifts", "AutoGifts", "Выдаёт Telegram-подарки покупателю с вашего Telegram-аккаунта.",
+     "Telegram", [FUNPAY_CHAT, "Telegram-аккаунт с запасом Stars"]),
     ("gift_radar", "Gift Radar", "Цены Telegram-подарков на Portals, MRKT и Getgems, расчёт прибыли и покупки на Portals.",
      "Telegram", [api("Portals, MRKT и Getgems")]),
 
