@@ -179,6 +179,14 @@ class Ctx:
         with accounts.use(account_id) as fp:
             return fp.get_lot_info(offer_id)
 
+    def save_lot_description(self, account_id, offer_id, new_desc):
+        """Обновляет описание лота на FunPay."""
+        if self.dry_run:
+            self.log(f"Пробный запуск: обновил бы описание лота {offer_id}")
+            return
+        with accounts.use(account_id) as fp:
+            fp.save_lot_description(offer_id, new_desc)
+
     def add_cost(self, order, amount):
         """Записать себестоимость заказа (в валюте FunPay-аккаунта) — для расчёта чистой прибыли."""
         if not self.dry_run:
