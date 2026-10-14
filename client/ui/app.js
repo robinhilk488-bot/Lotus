@@ -95,6 +95,7 @@ async function enterApp(demo, server) {
   $("#app").hidden = false;
   document.querySelectorAll("#nav a").forEach(a => (a.onclick = () => go(a.dataset.page)));
   try { state.settings = await api("GET", "/api/settings"); } catch { state.settings = {}; }
+  applyAccent(state.settings.accent || "violet");
   await poll(true);
   clearInterval(state.timer);
   state.timer = setInterval(poll, 20000);
@@ -121,6 +122,28 @@ async function poll(silent = false) {
     dot.className = "dot bad";
     $("#server-sub").textContent = "нет связи";
   }
+}
+
+// ---------- акцентный цвет (тема) ----------
+const ACCENTS = {
+  violet: { name: "Фиолетовый", gold: "#BC6CFF", neon: "#C77DFF", violet: "#A855F7", rgb: "188,108,255" },
+  blue:   { name: "Синий",      gold: "#5B8DEF", neon: "#6FA8FF", violet: "#3B6FE0", rgb: "91,141,239" },
+  green:  { name: "Зелёный",    gold: "#3DD68C", neon: "#4FE0A8", violet: "#2BB673", rgb: "61,214,140" },
+  gold:   { name: "Золотой",    gold: "#E0A82E", neon: "#F5BE52", violet: "#C98F1E", rgb: "224,168,46" },
+  pink:   { name: "Розовый",    gold: "#F0509C", neon: "#FF6FB0", violet: "#D93A82", rgb: "240,80,156" },
+  cyan:   { name: "Бирюзовый",  gold: "#2DB8C4", neon: "#3DD6E0", violet: "#1E9AA6", rgb: "45,184,196" },
+};
+function applyAccent(key) {
+  const a = ACCENTS[key] || ACCENTS.violet;
+  const r = document.documentElement.style;
+  r.setProperty("--gold", a.gold);
+  r.setProperty("--neon", a.neon);
+  r.setProperty("--violet", a.violet);
+  r.setProperty("--gold-dim", `rgba(${a.rgb}, .14)`);
+  r.setProperty("--glow", `0 0 20px rgba(${a.rgb}, .45)`);
+  // фоновое свечение страницы под акцент
+  r.setProperty("--accent-glow", `rgba(${a.rgb}, .14)`);
+  state.accent = key;
 }
 
 // ---------- счётчики в меню ----------
@@ -1511,6 +1534,7 @@ pages.settings = async root => {
                     ["tg_on_stock", "Закончился товар автовыдачи"], ["tg_on_review", "Новый отзыв"], ["tg_on_blacklist", "Заказ от покупателя из чёрного списка"], ["tg_on_order", "Каждый новый заказ"]];
   const groups = [
     ["conn", "Подключение", ICON.globe, ["sec-server", "sec-connect"]],
+    ["look", "Оформление", ICON.star, ["sec-look"]],
     ["notif", "Уведомления", ICON.bell, ["sec-tg"]],
     ["auto", "Автоматизация", ICON.bolt, ["sec-raise", "sec-bl", "sec-profit"]],
     ["backup", "Резервные копии", ICON.box, ["sec-backup"]],
@@ -1521,6 +1545,16 @@ pages.settings = async root => {
     <div class="settings-layout">
       <nav class="settings-nav">${groups.map((g, i) => `<a data-sg="${g[0]}" class="${i === 0 ? "on" : ""}"><span class="sn-ic">${g[2]}</span>${g[1]}</a>`).join("")}</nav>
       <div class="settings-content">
+      <section class="panel" id="sec-look">
+        <h2>Акцентный цвет</h2>
+        <p class="muted" style="margin:4px 0 16px">Цвет кнопок, выделения и графиков. Применяется сразу ко всему приложению.</p>
+        <div class="accent-grid">${Object.entries(ACCENTS).map(([k, a]) => `
+          <button class="accent-swatch ${(s.accent || "violet") === k ? "on" : ""}" data-accent="${k}" title="${a.name}">
+            <span class="accent-dot" style="background:${a.neon};box-shadow:0 0 12px ${a.neon}"></span>
+            <span class="accent-name">${a.name}</span>
+          </button>`).join("")}</div>
+        <p class="muted small" style="margin-top:14px">Выбор сохраняется на сервере — цвет будет одинаковым на всех ваших устройствах.</p>
+      </section>
       <section class="panel" id="sec-tg">
         <h2>Уведомления в Telegram</h2>
         <p class="muted" style="margin:4px 0 14px">Сигналы на телефон, даже когда приложение закрыто. Управления через Telegram нет — только уведомления.</p>
@@ -1586,6 +1620,15 @@ pages.settings = async root => {
   };
   root.querySelectorAll("[data-sg]").forEach(a => a.onclick = () => showGroup(a.dataset.sg));
   showGroup("conn");
+
+  // выбор акцентного цвета
+  root.querySelectorAll("[data-accent]").forEach(b => b.onclick = async () => {
+    const key = b.dataset.accent;
+    applyAccent(key);  // сразу перекрашиваем
+    root.querySelectorAll("[data-accent]").forEach(x => x.classList.toggle("on", x === b));
+    try { await api("PUT", "/api/settings", { accent: key }); toast("Цвет изменён"); }
+    catch (e) { toast(e.message, true); }
+  });
 
   root.querySelectorAll("section[id^=sec-]").forEach(sec => { const b = $(".save", sec); if (b) b.onclick = () => saveSection(sec); });
   $("#tg-test").onclick = async e => {
