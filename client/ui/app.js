@@ -96,6 +96,7 @@ async function enterApp(demo, server) {
   document.querySelectorAll("#nav a").forEach(a => (a.onclick = () => go(a.dataset.page)));
   try { state.settings = await api("GET", "/api/settings"); } catch { state.settings = {}; }
   applyAccent(state.settings.accent || "violet");
+  checkUpdate();  // проверка новой версии приложения (не блокирует запуск)
   await poll(true);
   clearInterval(state.timer);
   state.timer = setInterval(poll, 20000);
@@ -122,6 +123,58 @@ async function poll(silent = false) {
     dot.className = "dot bad";
     $("#server-sub").textContent = "нет связи";
   }
+}
+
+// ---------- проверка обновлений приложения ----------
+const APP_VERSION = "0.1.0";  // версия приложения (подставляется при сборке)
+const GH_REPO = "robinhilk488-bot/Lotus";
+
+async function checkUpdate() {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, { cache: "no-store" });
+    if (!r.ok) return;
+    const rel = await r.json();
+    // версия релиза: из тега (v0.1.1) или из названия
+    const tag = (rel.tag_name || "").replace(/^v/i, "");
+    const latest = tag && /\d/.test(tag) ? tag : null;
+    if (!latest || latest === "latest") {
+      // тег "latest" без номера — сравним по дате сборки
+      return;
+    }
+    if (cmpVersions(latest, APP_VERSION) > 0) {
+      const exe = (rel.assets || []).find(a => a.name.toLowerCase().endsWith(".exe"));
+      showUpdateBanner(latest, exe ? exe.browser_download_url : rel.html_url);
+    }
+  } catch { /* нет интернета — молча пропускаем */ }
+}
+
+function cmpVersions(a, b) {
+  const pa = String(a).split("."), pb = String(b).split(".");
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = parseInt(pa[i] || 0), y = parseInt(pb[i] || 0);
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
+function showUpdateBanner(version, url) {
+  if ($("#update-banner")) return;
+  const b = document.createElement("div");
+  b.id = "update-banner";
+  b.className = "update-banner";
+  b.innerHTML = `
+    <div class="ub-left">
+      <div class="ub-title">Доступно обновление · v${esc(version)}</div>
+      <div class="ub-sub">Скачайте новую версию приложения и запустите её.</div>
+    </div>
+    <div class="ub-actions">
+      <a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">Скачать обновление</a>
+      <button class="ub-close" title="Скрыть">✕</button>
+    </div>`;
+  const app = $("#app");
+  const main = app.querySelector("main") || app;
+  main.insertBefore(b, main.firstChild);
+  b.querySelector(".ub-close").onclick = () => b.remove();
 }
 
 // ---------- акцентный цвет (тема) ----------
