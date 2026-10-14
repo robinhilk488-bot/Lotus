@@ -375,6 +375,26 @@ class FunPayAccount:
             "price": pick("price"),
         }
 
+    def save_lot_description(self, offer_id, new_desc_ru, new_desc_en=None):
+        """Обновляет описание лота на FunPay, сохраняя остальные поля без изменений."""
+        fields = self._offer_form(offer_id)
+        # поля описания на русском и (опц.) английском
+        ru_key = next((k for k in fields if "desc" in k.lower() and ("ru" in k.lower() or k.lower().endswith("desc") or "описан" in k.lower())), None)
+        if not ru_key:
+            ru_key = next((k for k in fields if "desc" in k.lower()), None)
+        if not ru_key:
+            raise FunPayError(f"У лота {offer_id} не найдено поле описания")
+        fields[ru_key] = new_desc_ru
+        if new_desc_en is not None:
+            en_key = next((k for k in fields if "desc" in k.lower() and "en" in k.lower()), None)
+            if en_key:
+                fields[en_key] = new_desc_en
+        fields.pop("csrf_token", None)
+        res = self._post("/lots/offerSave", fields)
+        if res.get("error") or res.get("errors"):
+            raise FunPayError(f"FunPay не сохранил описание лота {offer_id}: {res.get('msg') or res.get('errors') or res.get('error')}")
+        return True
+
     def lot_is_active(self, offer_id) -> bool:
         return "active" in self._offer_form(offer_id)
 
