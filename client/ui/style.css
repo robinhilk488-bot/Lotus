@@ -859,3 +859,13 @@ svg { width: 1em; height: 1em; }
 .accent-swatch.on { border-color: var(--neon); box-shadow: 0 0 0 1px var(--neon); }
 .accent-dot { width: 22px; height: 22px; border-radius: 50%; flex: none; }
 .accent-name { white-space: nowrap; }
+
+/* ====== Плашка обновления приложения (как у Pulse) ====== */
+.update-banner { display: flex; align-items: center; gap: 16px; padding: 16px 20px; margin: 0 0 18px; border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--gold-dim), rgba(0,0,0,0)); border: 1px solid var(--neon); box-shadow: var(--shadow); }
+.ub-left { flex: 1; min-width: 0; }
+.ub-title { font-family: var(--display); font-weight: 700; font-size: 15px; }
+.ub-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.ub-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.ub-close { background: none; border: 0; color: var(--muted); font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.ub-close:hover { color: var(--text); background: var(--panel-2); }
