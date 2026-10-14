@@ -46,9 +46,13 @@ SETTINGS = [
     {"key": "confirm", "label": "Подтверждение ссылки", "type": "textarea",
      "default": "Проверьте ссылку: {link}\nВсё верно? Ответьте + если да, − если нужно изменить."},
     {"key": "started", "label": "Накрутка началась", "type": "textarea",
-     "default": "Готово! Накрутка запущена. Статус в любой момент: !status"},
+     "default": "Готово! Накрутка запущена. 🚀\nСтатус заказа: напишите !status\nВосстановить отписавшихся (если есть гарантия): !рефилл"},
     {"key": "again", "label": "Переспросить ссылку (после −)", "type": "text",
      "default": "Хорошо, пришлите правильную ссылку."},
+    {"key": "refill_ok_text", "label": "Рефилл запрошен", "type": "text",
+     "default": "Запрос на восстановление отправлен. Отписавшиеся вернутся в течение некоторого времени."},
+    {"key": "refill_no_text", "label": "Рефилл недоступен", "type": "text",
+     "default": "Эта услуга без гарантии восстановления, рефилл недоступен."},
     {"key": "status_text", "label": "Ответ на !status", "type": "text",
      "default": "Выполнено {done} из {quantity}, осталось {remains}. Статус: {status}"},
     {"key": "done_text", "label": "Накрутка завершена", "type": "textarea",
@@ -191,6 +195,21 @@ def on_message(msg, chat, ctx):
             ctx.reply(chat, _fill(ctx.config["status_text"], done=done, quantity=job["quantity"], remains=remains, status=status))
         except Exception:
             ctx.reply(chat, "Не удалось получить статус, попробуйте позже.")
+        return True
+
+    # !рефилл — восстановление отписавшихся (если панель даёт гарантию)
+    if low in ("!рефилл", "!refill", "рефилл", "refill"):
+        if not job or not job.get("smm_order"):
+            ctx.reply(chat, "Активного заказа на накрутку нет." if not job else "Накрутка ещё не запущена.")
+            return True
+        try:
+            res = _call(ctx, job["supplier"], "refill", order=job["smm_order"])
+            if isinstance(res, dict) and (res.get("refill") or res.get("status")):
+                ctx.reply(chat, ctx.config.get("refill_ok_text") or "Запрос на восстановление отправлен. Отписавшиеся вернутся в течение некоторого времени.")
+            else:
+                ctx.reply(chat, ctx.config.get("refill_no_text") or "Эта услуга без гарантии восстановления, рефилл недоступен.")
+        except Exception:
+            ctx.reply(chat, "Не удалось запросить восстановление, попробуйте позже или напишите продавцу.")
         return True
 
     if not job:
