@@ -1,10 +1,14 @@
-name: Сборка Lotus.exe
+name: Сборка Lotus
 
 on:
   push:
     branches: [main]
     paths: ["client/**", ".github/workflows/build-exe.yml"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия (напр. 0.1.1). Пусто — авто по дате."
+        required: false
 
 permissions:
   contents: write
@@ -19,11 +23,30 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Подставить адрес репозитория
+      # --- Версия сборки: из ввода, иначе дата+номер прогона ---
+      - name: Определить версию
+        id: ver
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.version }}"
+          if (-not $v) { $v = "0.1." + "${{ github.run_number }}" }
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+          echo "Версия сборки: $v"
+
+      - name: Подставить адрес репозитория и версию
         shell: pwsh
         run: |
           $f = "client/main.py"
-          (Get-Content $f -Raw -Encoding utf8).Replace('robinhilk488-bot/Lotus', '${{ github.repository }}') | Set-Content $f -Encoding utf8 -NoNewline
+          $c = Get-Content $f -Raw -Encoding utf8
+          $c = $c.Replace('robinhilk488-bot/Lotus', '${{ github.repository }}')
+          Set-Content $f $c -Encoding utf8 -NoNewline
+          # версию проставим в UI (app.js) — заменяем APP_VERSION
+          $a = "client/ui/app.js"
+          if (Test-Path $a) {
+            $ac = Get-Content $a -Raw -Encoding utf8
+            $ac = $ac -replace 'const APP_VERSION = "[^"]*"', 'const APP_VERSION = "${{ steps.ver.outputs.version }}"'
+            Set-Content $a $ac -Encoding utf8 -NoNewline
+          }
 
       - name: Установить зависимости
         run: pip install -r client/requirements.txt pyinstaller
@@ -37,11 +60,58 @@ jobs:
           --collect-all shiboken6
           main.py
 
+      # --- Установщик через Inno Setup ---
+      - name: Поставить Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Создать скрипт установщика
+        shell: pwsh
+        run: |
+          @"
+          [Setup]
+          AppName=Lotus
+          AppVersion=${{ steps.ver.outputs.version }}
+          AppPublisher=Lotus
+          DefaultDirName={autopf}\Lotus
+          DefaultGroupName=Lotus
+          OutputDir=client\dist
+          OutputBaseFilename=Lotus-Setup
+          SetupIconFile=client\kassa.ico
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          PrivilegesRequired=lowest
+          DisableProgramGroupPage=yes
+
+          [Languages]
+          Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
+
+          [Files]
+          Source: "client\dist\Lotus.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\Lotus"; Filename: "{app}\Lotus.exe"
+          Name: "{autodesktop}\Lotus"; Filename: "{app}\Lotus.exe"
+
+          [Run]
+          Filename: "{app}\Lotus.exe"; Description: "Запустить Lotus"; Flags: nowait postinstall skipifsilent
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Ярлыки:"
+          "@ | Out-File -FilePath installer.iss -Encoding utf8
+
+      - name: Собрать установщик
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss'
+
       - name: Выложить в релиз
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Последняя версия
-          body: Скачайте Lotus.exe и запустите. Один файл, движок внутри — ничего ставить не нужно.
-          files: client/dist/Lotus.exe
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Lotus v${{ steps.ver.outputs.version }}
+          body: |
+            Скачайте **Lotus-Setup.exe** — это установщик (ставит программу, делает ярлыки).
+            Либо **Lotus.exe** — портативная версия (один файл, запускается напрямую).
+          files: |
+            client/dist/Lotus-Setup.exe
+            client/dist/Lotus.exe
           make_latest: true
