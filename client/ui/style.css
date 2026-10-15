@@ -869,3 +869,51 @@ svg { width: 1em; height: 1em; }
 .ub-actions { display: flex; align-items: center; gap: 10px; flex: none; }
 .ub-close { background: none; border: 0; color: var(--muted); font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
 .ub-close:hover { color: var(--text); background: var(--panel-2); }
+
+/* ====== АППАРАТНОЕ УСКОРЕНИЕ (GPU) — та же красота, но плавно ======
+   Переносит отрисовку эффектов (теней, свечений, размытий) на видеокарту.
+   Визуально ничего не меняется — только работает плавно. */
+
+/* 1. Прокручиваемые области рисуются видеокартой на отдельных слоях */
+.chat-list, .acc-rows, .pcards, .ready-grid, .table-wrap,
+.settings-content, main, .cfg-body, .modal {
+  transform: translateZ(0);            /* включает GPU-слой */
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 2. Крупные панели — каждая на своём GPU-слое, тени считаются один раз, не при каждом кадре */
+.panel, .metric, .pcard, .acc-row, .hero-status, .sub-current,
+.update-banner, .pdetail, .day-panel, .acc-detail, .chat-item {
+  transform: translateZ(0);
+  /* изоляция: прокрутка внутри не пересчитывает элемент целиком */
+  contain: layout style paint;
+}
+
+/* 3. Длинные списки: не отрисовывать то, что за пределами экрана (огромный буст прокрутки) */
+.acc-row, .chat-item, .pcard, .ready-item, .task, .log li,
+.table-wrap tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;   /* примерная высота — чтобы скролл не прыгал */
+}
+
+/* 4. Тяжёлые фоновые свечения — на отдельном слое, не перерисовываются при скролле */
+body::before { will-change: transform; transform: translateZ(0); }
+
+/* 5. График — изолируем, чтобы его перерисовка не трогала остальную страницу */
+.chart { contain: layout paint; transform: translateZ(0); }
+
+/* 6. Плавная анимация только через GPU-свойства (transform/opacity), не layout */
+.metric, .pcard, .acc-row, .plan, .accent-swatch {
+  transition: transform .15s var(--ease), border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+
+/* ====== Обучающие подсказки (онбординг) ====== */
+.modal.onb { max-width: 440px; }
+.onb-head { display: flex; align-items: center; gap: 13px; margin-bottom: 14px; }
+.onb-ic { width: 46px; height: 46px; border-radius: 13px; background: var(--gold-dim); color: var(--neon); display: grid; place-items: center; flex: none; }
+.onb-ic svg { width: 24px; height: 24px; }
+.onb-head h2 { font-family: var(--display); font-size: 19px; }
+.onb-body { color: var(--muted); font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+.modal.onb .modal-actions { justify-content: flex-end; }
+.modal.onb .btn.primary { width: 100%; }
