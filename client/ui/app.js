@@ -222,6 +222,58 @@ async function refreshBadge() { try { applyStatus(await api("GET", "/api/status"
 
 // ---------- навигация ----------
 const pages = {};
+// ---------- обучающие подсказки при первом заходе (онбординг) ----------
+const ONBOARDING = {
+  dashboard: { title: "Сводка — главный экран", icon: "chart", body:
+    "Здесь всё самое важное о ваших продажах в одном месте.\n\n• Баланс, продажи за сегодня, прибыль за месяц\n• График выручки — нажмите на любой день, чтобы увидеть детали\n• Готовность аккаунтов — работают ли они\n• Журнал последних событий\n\nЗаглядывайте сюда, чтобы быстро понять, как идут дела." },
+  accounts: { title: "Аккаунты FunPay", icon: "users", body:
+    "Здесь вы подключаете аккаунты FunPay, которыми управляет бот.\n\n• Нажмите «Добавить аккаунт» и вставьте golden_key\n• Бот начнёт собирать баланс, заказы и отвечать покупателям\n• Для каждого аккаунта можно задать прокси\n• Статус показывает, работает аккаунт или есть проблема\n\nМожно подключить несколько аккаунтов сразу." },
+  sales: { title: "Продажи", icon: "chart", body:
+    "Вся статистика и история заказов.\n\n• Выручка, прибыль, средний чек, возвраты\n• График по дням\n• Самые прибыльные лоты\n• Таблица всех заказов с поиском и фильтрами\n\nЗдесь видно, что и на сколько вы продали за любой период." },
+  delivery: { title: "Автовыдача", icon: "box", body:
+    "Бот сам отправляет товар покупателю сразу после оплаты.\n\n• Добавьте лот: фразу из названия на FunPay и что выдавать\n• Можно выдавать один текст всем или уникальный товар из списка\n• Бот ищет вашу фразу в названии лота и отправляет товар\n\nВключите тумблер сверху, чтобы автовыдача заработала." },
+  autoresponder: { title: "Автоответы", icon: "chat", body:
+    "Бот отвечает покупателям автоматически.\n\n• Приветствие на первое сообщение\n• Ответы по ключевым словам\n• Просьба об отзыве после заказа\n• Ответы под отзывами\n\nНастройте шаблоны — и бот будет общаться за вас круглосуточно." },
+  plugins: { title: "Плагины", icon: "plug", body:
+    "Это дополнения, которые автоматизируют разные задачи.\n\n• Выдача Stars, Premium, Robux, Apple-карт и другого\n• Аренда аккаунтов, SMM-накрутка, коды Steam\n• Каждый плагин включается и настраивается отдельно\n\nНайдите нужный в каталоге, откройте настройки и включите." },
+  chats: { title: "Чаты", icon: "chat", body:
+    "Переписка со всеми покупателями в одном месте.\n\n• Все диалоги со всех аккаунтов\n• Поиск и фильтр непрочитанных\n• Видно, по какому лоту пишет покупатель\n• Можно отвечать прямо отсюда\n\nБот отвечает сам, но вы всегда можете вмешаться вручную." },
+  subscription: { title: "Подписка", icon: "wallet", body:
+    "Здесь управление подпиской на бота.\n\n• Виден текущий статус и сколько дней осталось\n• Активация кода, купленного на FunPay\n• Тарифы на разные сроки\n\nБез активной подписки платные плагины не принимают заказы." },
+  settings: { title: "Настройки", icon: "bolt", body:
+    "Настройка работы и внешнего вида бота.\n\n• Подключение — частота проверки заказов\n• Оформление — выбор цвета приложения\n• Уведомления в Telegram\n• Автоматизация — автоподнятие, чёрный список\n• Резервные копии\n\nВыбирайте раздел слева." },
+};
+
+function seenOnboarding(page) {
+  try { if (JSON.parse(localStorage.getItem("onboarded") || "{}")[page]) return true; } catch {}
+  return !!(state.settings && state.settings.onboarded && state.settings.onboarded[page]);
+}
+
+function markOnboarded(page) {
+  // локально
+  try {
+    const o = JSON.parse(localStorage.getItem("onboarded") || "{}");
+    o[page] = 1; localStorage.setItem("onboarded", JSON.stringify(o));
+  } catch {}
+  // на сервере (чтобы пережило переустановку)
+  const srv = (state.settings && state.settings.onboarded) || {};
+  srv[page] = 1;
+  if (state.settings) state.settings.onboarded = srv;
+  api("PUT", "/api/settings", { onboarded: srv }).catch(() => {});
+}
+
+function showOnboarding(page) {
+  const o = ONBOARDING[page];
+  if (!o || seenOnboarding(page) || state.demo) return;
+  const root = $("#modal-root");
+  root.innerHTML = `<div class="overlay"><div class="modal onb">
+    <div class="onb-head"><span class="onb-ic">${ICON[o.icon] || ICON.star}</span><h2>${esc(o.title)}</h2></div>
+    <p class="onb-body">${esc(o.body).replace(/\n/g, "<br>")}</p>
+    <div class="modal-actions"><button class="btn primary" id="onb-ok">Понятно, дальше</button></div>
+  </div></div>`;
+  $("#onb-ok").onclick = () => { markOnboarded(page); root.innerHTML = ""; };
+}
+
 async function go(page) {
   clearInterval(state.chatTimer);
   state.page = page;
@@ -233,6 +285,8 @@ async function go(page) {
   catch (e) { root.innerHTML = `<div class="panel empty"><h2>Не удалось загрузить раздел</h2><p class="muted">${esc(e.message)}</p><button class="btn" onclick="go('${page}')">Повторить</button></div>`; }
   // мягкое появление контента раздела
   requestAnimationFrame(() => root.classList.add("page-in"));
+  // обучающая подсказка при первом заходе в раздел
+  showOnboarding(page);
 }
 
 // ---------- график ----------
