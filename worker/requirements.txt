@@ -7,4 +7,3 @@ requests[socks]>=2.32
 tonutils>=0.3
 httpx>=0.27
 pyrogram>=2.0
-tgcrypto>=1.2
