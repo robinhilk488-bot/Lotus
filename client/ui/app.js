@@ -303,13 +303,18 @@ function drawChart(el, daily, onPick) {
   const pts = daily.map((d, i) => [x(i), y(d.revenue)]);
 
   // гладкая кривая (Catmull-Rom → Bézier) — плавные волны, как у Pulse
+  // yBase — координата нулевой линии; контрольные точки не опускаем ниже неё,
+  // чтобы кривая не проваливалась под ноль при резких перепадах.
+  const yBase = y(0);
+  const clampY = v => Math.min(yBase, v);  // не ниже нуля
   const smooth = p => {
     if (p.length < 2) return "";
     let d = `M${p[0][0]},${p[0][1]}`;
     for (let i = 0; i < p.length - 1; i++) {
       const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
-      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
-      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      // уменьшенный коэффициент (1/8 вместо 1/6) делает кривую мягче и меньше «перелёт»
+      const c1x = p1[0] + (p2[0] - p0[0]) / 8, c1y = clampY(p1[1] + (p2[1] - p0[1]) / 8);
+      const c2x = p2[0] - (p3[0] - p1[0]) / 8, c2y = clampY(p2[1] - (p3[1] - p1[1]) / 8);
       d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
     }
     return d;
@@ -324,14 +329,17 @@ function drawChart(el, daily, onPick) {
         <stop offset="100%" stop-color="#C77DFF" stop-opacity="0"/>
       </linearGradient>
       <filter id="lineGlow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <clipPath id="chartClip"><rect x="0" y="0" width="${W}" height="${y(0) + 1}"/></clipPath>
     </defs>`;
   for (let i = 0; i <= ticks; i++) {
     const v = tick * i, yy = y(v);
     svg += `<line class="gridline" x1="${padL}" x2="${W}" y1="${yy}" y2="${yy}"/>`;
     svg += `<text class="axis" x="${padL - 8}" y="${yy + 4}" text-anchor="end">${v >= 1000 ? nf.format(v / 1000) + "к" : nf.format(v)}</text>`;
   }
+  svg += `<g clip-path="url(#chartClip)">`;
   svg += `<path d="${area}" fill="url(#areaGrad)"/>`;
   svg += `<path d="${line}" fill="none" stroke="#C77DFF" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#lineGlow)"/>`;
+  svg += `</g>`;
   // точки + подписи дат + зоны наведения
   daily.forEach((d, i) => {
     svg += `<circle class="dot-pt" cx="${x(i)}" cy="${y(d.revenue)}" r="0"/>`;
