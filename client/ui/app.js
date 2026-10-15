@@ -125,6 +125,27 @@ async function poll(silent = false) {
   }
 }
 
+// ---------- открытие внешних ссылок в системном браузере ----------
+// В desktop-приложении (QtWebEngine) обычный target="_blank" не работает,
+// поэтому открываем ссылку через мост в Python или запасные способы.
+function openExternal(url) {
+  if (!url) return;
+  // 1. мост в Python (если настроен в main.py через QWebChannel/title)
+  try { if (window.pywebview && window.pywebview.api && window.pywebview.api.open_url) { window.pywebview.api.open_url(url); return; } } catch {}
+  try { if (window.bridge && window.bridge.openUrl) { window.bridge.openUrl(url); return; } } catch {}
+  // 2. сигнал через смену title — main.py это ловит и открывает браузер
+  try { document.title = "OPEN_URL::" + url; setTimeout(() => { document.title = "Lotus"; }, 100); } catch {}
+  // 3. запасной способ — window.open
+  try { window.open(url, "_blank"); } catch {}
+  // 4. совсем запасной — переход (на случай если движок умеет)
+  try { const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove(); } catch {}
+}
+// глобальный перехват кликов по ссылкам с target=_blank
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest('a[target="_blank"]');
+  if (a && a.href) { e.preventDefault(); openExternal(a.href); }
+}, true);
+
 // ---------- проверка обновлений приложения ----------
 const APP_VERSION = "0.1.0";  // версия приложения (подставляется при сборке)
 const GH_REPO = "robinhilk488-bot/Lotus";
