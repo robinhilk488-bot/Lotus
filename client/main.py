@@ -11,6 +11,7 @@ import json
 import os
 import ssl
 import sys
+import webbrowser
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -18,18 +19,25 @@ import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 
-from PySide6.QtCore import QFile, QIODevice, QObject, Qt, Slot
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QFile, QIODevice, QObject, Qt, Slot, QUrl
+from PySide6.QtGui import QIcon, QDesktopServices
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtWebEngineCore import QWebEngineProfile
+from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Флаги движка Chromium: лечат ввод с клавиатуры в собранном .exe на части машин.
+# Флаги движка Chromium.
+# Раньше тут стоял --disable-gpu (из-за проблем с вводом на части машин), но это
+# делало интерфейс медленным (всё рисовал процессор). Теперь включаем мягкое
+# аппаратное ускорение: GPU работает, но без агрессивных режимов, которые ломали ввод.
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
-                      "--disable-gpu --disable-gpu-compositing --no-sandbox")
+                      "--no-sandbox "
+                      "--enable-gpu-rasterization "
+                      "--enable-accelerated-2d-canvas "
+                      "--ignore-gpu-blocklist "
+                      "--disable-features=RendererCodeIntegrity")
 
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 INSTALL_REPO = "robinhilk488-bot/Lotus"
@@ -86,6 +94,19 @@ def parse_link(link: str) -> dict:
             "fp": q["fp"][0].replace(":", "").lower(), "link": link}
 
 
+def open_in_browser(url: str):
+    """Открывает ссылку в системном браузере пользователя."""
+    if not url or not url.startswith(("http://", "https://")):
+        return
+    try:
+        QDesktopServices.openUrl(QUrl(url))
+    except Exception:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+
 class Api(QObject):
     """Методы доступны из JS как window.pywebview.api.* (через слой совместимости)."""
 
@@ -93,6 +114,11 @@ class Api(QObject):
         super().__init__()
         self.conn = None
         self.session = None
+
+    @Slot(str)
+    def open_url(self, url):
+        """JS вызывает этот метод, чтобы открыть ссылку в браузере."""
+        open_in_browser(url)
 
     @Slot(result=str)
     def install_command(self):
@@ -174,7 +200,8 @@ new QWebChannel(qt.webChannelTransport, function (channel) {
         load_saved:      function () { return call("load_saved", []); },
         forget:          function () { return call("forget", []); },
         connect:         function (link) { return call("connect", [link]); },
-        request:         function (m, p, body) { return call("request", [m, p, body ? JSON.stringify(body) : ""]); }
+        request:         function (m, p, body) { return call("request", [m, p, body ? JSON.stringify(body) : ""]); },
+        open_url:        function (url) { api.open_url(url); }
     }};
     window.dispatchEvent(new Event("pywebviewready"));
 });
@@ -194,6 +221,24 @@ def _qwebchannel_js():
     return ""
 
 
+class LotusPage(QWebEnginePage):
+    """Страница, которая внешние ссылки открывает в системном браузере, а не внутри приложения."""
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        u = url.toString()
+        # внешние ссылки (funpay, github, лоты, профили) — в браузер, не внутри окна
+        if u.startswith(("http://", "https://")) and not u.startswith("file:"):
+            open_in_browser(u)
+            return False
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+    def createWindow(self, _type):
+        # когда JS делает window.open / target=_blank — открываем в браузере
+        tmp = QWebEnginePage(self)
+        tmp.urlChanged.connect(lambda url: (open_in_browser(url.toString()), tmp.deleteLater()))
+        return tmp
+
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -206,6 +251,9 @@ class Window(QMainWindow):
 
         self.view = QWebEngineView()
         self.view.setFocusPolicy(Qt.StrongFocus)
+        # своя страница — для открытия внешних ссылок в браузере
+        self.page = LotusPage(self.view)
+        self.view.setPage(self.page)
         self.setCentralWidget(self.view)
 
         self.api = Api()
@@ -221,6 +269,13 @@ class Window(QMainWindow):
                 self.view.setFocus()  # отдаём фокус странице, иначе не принимается ввод
 
         self.view.loadFinished.connect(_on_loaded)
+
+        # запасной способ открытия ссылок: JS меняет заголовок на OPEN_URL::ссылка
+        def _on_title(title):
+            if title.startswith("OPEN_URL::"):
+                open_in_browser(title[len("OPEN_URL::"):])
+        self.view.page().titleChanged.connect(_on_title)
+
         self.view.setUrl("file:///" + str(APP_DIR / "ui" / "index.html").replace("\\", "/"))
 
 
